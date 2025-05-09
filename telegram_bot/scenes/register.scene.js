@@ -1,14 +1,24 @@
 import { Scenes, Markup } from 'telegraf';
 
-const isValidUsername = (str) => /^[a-zA-Z0-9]+$/.test(str);
+const isValidUsername = (str) => /^[a-zA-Z0-9_]{3,}$/.test(str);
 const apiUrl = process.env.API_URL || 'http://localhost:4000';
 
 const registerScene = new Scenes.BaseScene('register');
 
+// Додаємо на початку сцени після registerScene.enter
 registerScene.enter((ctx) => {
 	console.log(`🔄 Користувач ${ctx.from.id} розпочав реєстрацію`);
-	ctx.reply('✏️ Введи свій нікнейм (тільки англ. літери та цифри):');
+	ctx.reply('✏️ Введи свій нікнейм (тільки англ. літери, цифри, мінімум 3 символи):');
 	ctx.session.step = 'awaiting_nick';
+
+	// Додаємо таймаут на 10 хвилин
+	ctx.session.registrationTimeout = setTimeout(() => {
+		if (ctx.session && ctx.session.step) {
+			ctx.reply('❌ Час реєстрації вичерпано. Будь ласка, почніть знову командою /register');
+			ctx.scene.leave();
+			ctx.session = {};
+		}
+	}, 10 * 60 * 1000); // 10 хвилин
 });
 
 // Єдиний обробник для всіх текстових повідомлень
@@ -41,9 +51,9 @@ registerScene.on('text', async (ctx) => {
 
 	// Якщо на етапі введення паролю
 	if (step === 'awaiting_password') {
-		if (!isValidUsername(text)) {
+		if (!isValidUsername(text) || text.length < 4) {
 			console.log(`⚠️ Користувач ${ctx.from.id} ввів некоректний пароль`);
-			return ctx.reply('❌ Некоректний пароль. Тільки англ. літери та цифри.');
+			return ctx.reply('❌ Некоректний пароль. Пароль має містити тільки англ. літери, цифри та бути довжиною не менше 4 символів.');
 		}
 		ctx.session.password = text;
 		ctx.session.telegramId = ctx.from.id;
@@ -101,7 +111,18 @@ registerScene.action('cancel_ref', async (ctx) => {
 	return finishRegistration(ctx);
 });
 
+registerScene.leave((ctx) => {
+	if (ctx.session && ctx.session.registrationTimeout) {
+		clearTimeout(ctx.session.registrationTimeout);
+	}
+	console.log(`🔄 Користувач ${ctx.from ? ctx.from.id : 'невідомий'} вийшов зі сцени реєстрації`);
+});
+
 async function finishRegistration(ctx) {
+	if (ctx.session.registrationTimeout) {
+		clearTimeout(ctx.session.registrationTimeout);
+	}
+
 	const { telegramId, minecraftNick, password, referrerNick } = ctx.session;
 	console.log(`🔄 Завершення реєстрації для ${telegramId} (${minecraftNick}), реферал: ${referrerNick || 'немає'}`);
 

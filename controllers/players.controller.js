@@ -9,6 +9,15 @@ async function register(req, res) {
 		return res.status(400).json({ message: 'Missing telegramId, minecraftNick or password' });
 	}
 
+	// Перевірка мінімальної довжини нікнейму та паролю
+	if (minecraftNick.length < 3) {
+		return res.status(400).json({ message: 'Minecraft nickname must be at least 3 characters long' });
+	}
+
+	if (password.length < 4) {
+		return res.status(400).json({ message: 'Password must be at least 4 characters long' });
+	}
+
 	// Хешуємо пароль
 	const hashedPassword = hashPassword(password);
 	const now = Math.floor(Date.now() / 1000);
@@ -22,13 +31,24 @@ async function register(req, res) {
 		try {
 			await conn.beginTransaction();
 
-			// Перевірка на наявність такого нікнейму в authme
-			const [existingAuthUser] = await conn.query('SELECT * FROM authme WHERE username = ?', [minecraftNick]);
+			// Перевірка на наявність такого точного нікнейму в authme (з урахуванням регістру)
+			const [existingAuthUser] = await conn.query('SELECT * FROM authme WHERE BINARY username = ?', [minecraftNick]);
 
 			if (existingAuthUser.length > 0) {
 				await conn.rollback();
 				conn.release();
 				return res.status(409).json({ message: 'Minecraft username already exists' });
+			}
+
+			// Перевірка на наявність подібного нікнейму без урахування регістру
+			const [similarUsers] = await conn.query('SELECT * FROM authme WHERE LOWER(username) = LOWER(?)', [minecraftNick]);
+			if (similarUsers.length > 0) {
+				await conn.rollback();
+				conn.release();
+				return res.status(409).json({
+					message: 'Similar Minecraft username already exists (case-insensitive match)',
+					suggestion: similarUsers[0].username
+				});
 			}
 
 			// Перевірка на наявність такого telegram_id в users
@@ -43,16 +63,33 @@ async function register(req, res) {
 			let validReferrerNick = null;
 
 			if (referrerNick) {
-				// Отримуємо всі можливі збіги з бази даних
-				const [referrers] = await conn.query('SELECT * FROM users WHERE minecraft_nick = ?', [referrerNick]);
+				// Перевіряємо що користувач не намагається вказати себе як реферала
+				if (minecraftNick.toLowerCase() === referrerNick.toLowerCase()) {
+					await conn.rollback();
+					conn.release();
+					return res.status(400).json({ message: 'Cannot set yourself as a referrer' });
+				}
 
-				// Перевіряємо точний збіг з урахуванням регістру
-				const exactMatch = referrers.find(user => user.minecraft_nick === referrerNick);
+				// Спочатку шукаємо точний збіг за регістром
+				const [exactReferrer] = await conn.query('SELECT * FROM users WHERE BINARY minecraft_nick = ?', [referrerNick]);
 
-				if (exactMatch) {
+				if (exactReferrer.length > 0) {
 					// Реферал існує з точним збігом регістру - зберігаємо його нік
-					validReferrerNick = exactMatch.minecraft_nick;
+					validReferrerNick = exactReferrer[0].minecraft_nick;
 					referrerFound = true;
+				} else {
+					// Якщо точного збігу немає, шукаємо без урахування регістру
+					const [similarReferrers] = await conn.query('SELECT * FROM users WHERE LOWER(minecraft_nick) = LOWER(?)', [referrerNick]);
+
+					if (similarReferrers.length > 0) {
+						await conn.rollback();
+						conn.release();
+						return res.status(400).json({
+							message: 'Referrer found but with different case. Please use exact nickname',
+							suggestion: similarReferrers[0].minecraft_nick
+						});
+					}
+					// Якщо реферала не знайдено взагалі - продовжуємо реєстрацію без реферала
 				}
 			}
 
@@ -70,12 +107,12 @@ async function register(req, res) {
 
 			// Обробляємо реферальну систему тільки якщо реферал існує
 			if (referrerFound) {
-				const [referrer] = await conn.query('SELECT * FROM users WHERE minecraft_nick = ?', [validReferrerNick]);
+				const [referrer] = await conn.query('SELECT * FROM users WHERE BINARY minecraft_nick = ?', [validReferrerNick]);
 				const referrerTelegramId = referrer[0].telegram_id;
 
 				// Додаємо запис в таблицю referrals 
 				await conn.query(
-					'INSERT INTO referrals  (referrer_telegram_id, referred_telegram_id, referred_nick, confirmed, created_at) VALUES (?, ?, ?, ?, ?)',
+					'INSERT INTO referrals (referrer_telegram_id, referred_telegram_id, referred_nick, confirmed, created_at) VALUES (?, ?, ?, ?, ?)',
 					[referrerTelegramId, telegramId, minecraftNick, 1, now]
 				);
 
@@ -117,7 +154,7 @@ async function register(req, res) {
 				minecraft_nick: minecraftNick,
 				registered_at: now,
 				referrer_applied: referrerFound,
-				referrerNick
+				referrerNick: validReferrerNick
 			});
 
 		} catch (error) {
@@ -163,38 +200,50 @@ async function addReferrer(req, res) {
 				return res.status(409).json({ message: 'User already has a referrer' });
 			}
 
-			// Перевірка на існування реферала з урахуванням регістру
-			const [referrers] = await conn.query('SELECT * FROM users WHERE minecraft_nick = ?', [referrerNick]);
-
-			// Перевіряємо точний збіг з урахуванням регістру
-			const exactMatch = referrers.find(refUser => refUser.minecraft_nick === referrerNick);
-
-			if (!exactMatch) {
-				await conn.rollback();
-				conn.release();
-				return res.status(404).json({ message: 'Referrer not found' });
-			}
-
 			// Перевірка, що користувач не намагається вказати себе як реферала
-			// Тут теж порівнюємо з урахуванням регістру
-			if (user[0].minecraft_nick === referrerNick) {
+			// Використовуємо регістронезалежне порівняння
+			if (user[0].minecraft_nick.toLowerCase() === referrerNick.toLowerCase()) {
 				await conn.rollback();
 				conn.release();
 				return res.status(400).json({ message: 'Cannot set yourself as a referrer' });
 			}
 
-			const referrerTelegramId = exactMatch.telegram_id;
+			// Перевірка на існування реферала з урахуванням регістру
+			const [exactReferrer] = await conn.query('SELECT * FROM users WHERE BINARY minecraft_nick = ?', [referrerNick]);
+
+			if (exactReferrer.length === 0) {
+				// Якщо точного збігу немає, шукаємо без урахування регістру
+				const [similarReferrers] = await conn.query('SELECT * FROM users WHERE LOWER(minecraft_nick) = LOWER(?)', [referrerNick]);
+
+				if (similarReferrers.length > 0) {
+					// Знайдено збіг без урахування регістру
+					await conn.rollback();
+					conn.release();
+					return res.status(400).json({
+						message: 'Referrer found but with different case. Please use exact nickname',
+						suggestion: similarReferrers[0].minecraft_nick
+					});
+				} else {
+					// Реферала не знайдено взагалі
+					await conn.rollback();
+					conn.release();
+					return res.status(404).json({ message: 'Referrer not found' });
+				}
+			}
+
+			const referrerTelegramId = exactReferrer[0].telegram_id;
+			const exactRefNick = exactReferrer[0].minecraft_nick;
 
 			// Оновлюємо інформацію про реферала в таблиці users
 			// Використовуємо ім'я з точним регістром, яке знайшли в БД
 			await conn.query(
 				'UPDATE users SET referrer_nick = ?, updated_at = ? WHERE telegram_id = ?',
-				[exactMatch.minecraft_nick, now, telegramId]
+				[exactRefNick, now, telegramId]
 			);
 
 			// Додаємо запис в таблицю referrals 
 			await conn.query(
-				'INSERT INTO referrals  (referrer_telegram_id, referred_telegram_id, referred_nick, confirmed, created_at) VALUES (?, ?, ?, ?, ?)',
+				'INSERT INTO referrals (referrer_telegram_id, referred_telegram_id, referred_nick, confirmed, created_at) VALUES (?, ?, ?, ?, ?)',
 				[referrerTelegramId, telegramId, user[0].minecraft_nick, 1, now]
 			);
 
@@ -232,7 +281,7 @@ async function addReferrer(req, res) {
 
 			return res.status(200).json({
 				message: 'Referrer added successfully',
-				referrer_nick: exactMatch.minecraft_nick
+				referrer_nick: exactRefNick
 			});
 
 		} catch (error) {
