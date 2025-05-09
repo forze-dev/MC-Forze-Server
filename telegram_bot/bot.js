@@ -5,6 +5,7 @@ import startCommand from './commands/start.command.js';
 import helpCommand from './commands/help.command.js';
 import registerCommand from './commands/register.command.js';
 import refferCommand from './commands/reffer.command.js';
+import statisticCommand from './commands/statistic.command.js';
 
 import { registerScene } from './scenes/register.scene.js';
 // Додай інші сцени, наприклад:
@@ -43,6 +44,7 @@ tgBot.command('start', startCommand);
 tgBot.command('help', helpCommand);
 tgBot.command('register', registerCommand);
 tgBot.command('reffer', refferCommand);
+tgBot.command('statistic', statisticCommand);
 
 const startBot = async () => {
 	try {

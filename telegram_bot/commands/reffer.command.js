@@ -57,6 +57,9 @@ const refferCommand = async (ctx) => {
 						return ctx.reply('⚠️ Помилка: не вказано нік гравця');
 					} else if (data.message === 'Cannot set yourself as a referrer') {
 						return ctx.reply('⚠️ Ти не можеш вказати себе');
+					} else if (data.message && data.message.includes('Referrer found but with different case')) {
+						// Додаємо обробку випадку невірного регістру та показуємо правильний нік
+						return ctx.reply(`⚠️ Гравець знайдений, але з іншим регістром. Будь ласка, використовуй точний нік: ${data.suggestion}`);
 					}
 					break;
 				case 404:
@@ -73,6 +76,11 @@ const refferCommand = async (ctx) => {
 					break;
 				default:
 					return ctx.reply(`❌ Помилка сервера: ${response.status}. Спробуй пізніше.`);
+			}
+
+			// Додаємо обробку решти випадків, якщо вони не потрапили в жоден з кейсів вище
+			if (!ctx.responded) {
+				return ctx.reply(`❌ Помилка: ${data.message || 'Невідома помилка'}. Спробуй пізніше.`);
 			}
 		}
 
