@@ -1,20 +1,24 @@
+const apiUrl = process.env.API_URL || 'http://localhost:4000';
+
 const refferCommand = async (ctx) => {
 	try {
+		console.log(`🔄 Користувач ${ctx.from.id} запустив команду /reffer`);
+
 		// Перевіряємо, чи є аргументи в команді
 		const args = ctx.message.text.split(' ').slice(1);
 
 		if (args.length === 0) {
+			console.log(`⚠️ Користувач ${ctx.from.id} не вказав нік реферала`);
 			return ctx.reply('⚠️ Вкажи нік гравця, який тебе запросив на сервер.\nПриклад: /reffer NickName');
 		}
 
 		const referrerNick = args[0];
 		const telegramId = ctx.from.id.toString();
 
-		// URL до твого API
-		const apiUrl = 'http://localhost:4000/players/add-reffer'; // Заміни на свою URL
+		console.log(`🔄 Спроба додати реферала для ${telegramId}: ${referrerNick}`);
 
 		// Робимо запит до API використовуючи fetch
-		const response = await fetch(apiUrl, {
+		const response = await fetch(`${apiUrl}/players/add-reffer`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'
@@ -31,18 +35,22 @@ const refferCommand = async (ctx) => {
 
 		if (contentType && contentType.includes('application/json')) {
 			data = await response.json();
+			console.log(`📨 Отримано відповідь від API: ${response.status} ${JSON.stringify(data)}`);
 		} else {
 			// Якщо відповідь не JSON, просто отримуємо текст для логування
 			const textResponse = await response.text();
-			console.error('Сервер повернув не JSON відповідь:', textResponse);
+			console.error(`❌ Сервер повернув не JSON відповідь: ${textResponse}`);
 			return ctx.reply('❌ Помилка з`єднання з сервером. Спробуй пізніше.');
 		}
 
 		// Якщо успішно додано реферала
 		if (response.ok) {
+			console.log(`✅ Реферал ${referrerNick} успішно доданий для ${telegramId}`);
 			return ctx.reply(`✅ Гравця ${referrerNick} успішно вказано як того, хто запросив тебе на сервер!`);
 		} else {
 			// Обробка помилок від API
+			console.log(`⚠️ Помилка додавання реферала: ${response.status} ${JSON.stringify(data)}`);
+
 			switch (response.status) {
 				case 400:
 					if (data.message === 'Missing telegramId or referrerNick') {
@@ -69,7 +77,7 @@ const refferCommand = async (ctx) => {
 		}
 
 	} catch (error) {
-		console.error('Error in reffer command:', error);
+		console.error(`❌ Помилка в команді reffer: ${error}`);
 		return ctx.reply('❌ Виникла помилка. Спробуй пізніше.');
 	}
 };

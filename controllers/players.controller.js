@@ -43,12 +43,15 @@ async function register(req, res) {
 			let validReferrerNick = null;
 
 			if (referrerNick) {
-				// Перевіряємо наявність реферала в системі
-				const [referrer] = await conn.query('SELECT * FROM users WHERE minecraft_nick = ?', [referrerNick]);
+				// Отримуємо всі можливі збіги з бази даних
+				const [referrers] = await conn.query('SELECT * FROM users WHERE minecraft_nick = ?', [referrerNick]);
 
-				if (referrer.length > 0) {
-					// Реферал існує - зберігаємо його нік
-					validReferrerNick = referrerNick;
+				// Перевіряємо точний збіг з урахуванням регістру
+				const exactMatch = referrers.find(user => user.minecraft_nick === referrerNick);
+
+				if (exactMatch) {
+					// Реферал існує з точним збігом регістру - зберігаємо його нік
+					validReferrerNick = exactMatch.minecraft_nick;
 					referrerFound = true;
 				}
 			}
@@ -160,28 +163,33 @@ async function addReferrer(req, res) {
 				return res.status(409).json({ message: 'User already has a referrer' });
 			}
 
-			// Перевірка на існування реферала
-			const [referrer] = await conn.query('SELECT * FROM users WHERE minecraft_nick = ?', [referrerNick]);
+			// Перевірка на існування реферала з урахуванням регістру
+			const [referrers] = await conn.query('SELECT * FROM users WHERE minecraft_nick = ?', [referrerNick]);
 
-			if (referrer.length === 0) {
+			// Перевіряємо точний збіг з урахуванням регістру
+			const exactMatch = referrers.find(refUser => refUser.minecraft_nick === referrerNick);
+
+			if (!exactMatch) {
 				await conn.rollback();
 				conn.release();
 				return res.status(404).json({ message: 'Referrer not found' });
 			}
 
 			// Перевірка, що користувач не намагається вказати себе як реферала
+			// Тут теж порівнюємо з урахуванням регістру
 			if (user[0].minecraft_nick === referrerNick) {
 				await conn.rollback();
 				conn.release();
 				return res.status(400).json({ message: 'Cannot set yourself as a referrer' });
 			}
 
-			const referrerTelegramId = referrer[0].telegram_id;
+			const referrerTelegramId = exactMatch.telegram_id;
 
 			// Оновлюємо інформацію про реферала в таблиці users
+			// Використовуємо ім'я з точним регістром, яке знайшли в БД
 			await conn.query(
 				'UPDATE users SET referrer_nick = ?, updated_at = ? WHERE telegram_id = ?',
-				[referrerNick, now, telegramId]
+				[exactMatch.minecraft_nick, now, telegramId]
 			);
 
 			// Додаємо запис в таблицю referrals 
@@ -224,7 +232,7 @@ async function addReferrer(req, res) {
 
 			return res.status(200).json({
 				message: 'Referrer added successfully',
-				referrer_nick: referrerNick
+				referrer_nick: exactMatch.minecraft_nick
 			});
 
 		} catch (error) {
