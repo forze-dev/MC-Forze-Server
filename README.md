@@ -11,7 +11,7 @@ Forze Server Core is a comprehensive backend solution for Minecraft server manag
 - Referral System: Bonuses for inviting new players with progressive discounts
 - Golden Hours: Scheduled 2x reward periods to boost engagement
 - Weekly Leaderboard: Top player rankings with exclusive rewards
-
+git push -u origin main
 ### Server Shop
 - Resource Marketplace: Purchase in-game items and resources with earned points
 - Dungeon Access System: Special passes for exclusive game content
