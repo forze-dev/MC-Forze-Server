@@ -4,10 +4,17 @@ import http from 'http';
 import cors from 'cors';
 import startBot from './telegram_bot/bot.js';
 import playersRouter from './router/players.router.js';
+import { connectRedis, loadRegisteredUsers } from './services/redis.service.js';
+import { startPeriodicUpdates } from './services/messageCounter.service.js';
+import { pool } from './services/db.service.js';
 
 // Перевірка змінних оточення
 if (!process.env.PORT) {
 	console.warn('⚠️ Змінна PORT не вказана в змінних оточення. Використовується значення за замовчуванням 4000');
+}
+
+if (!process.env.TARGET_CHAT_ID) {
+	console.warn('⚠️ TARGET_CHAT_ID не вказано. Підрахунок повідомлень може не працювати коректно.');
 }
 
 // Створюємо Express додаток
@@ -45,40 +52,53 @@ app.use((err, req, res, next) => {
 	res.status(500).json({ message: 'Внутрішня помилка сервера' });
 });
 
-// Створюємо HTTP сервер
-const server = http.createServer(app);
+// Ініціалізація додатку
+const initialize = async () => {
+	try {
+		// Підключаємося до Redis
+		const connected = await connectRedis();
 
-// Запускаємо сервер
-server.listen(PORT, () => {
-	console.log(`✅ Сервер запущено на порту ${PORT}`);
-	console.log(`🔗 API URL: ${process.env.API_URL || `http://localhost:${PORT}`}`);
-});
+		if (connected) {
+			// Завантажуємо список зареєстрованих користувачів у кеш
+			await loadRegisteredUsers(pool);
 
-// Запускаємо Telegram бота
-startBot();
+			// Налаштовуємо періодичне оновлення балансу
+			startPeriodicUpdates();
+		}
 
-// Обробка помилок
-process.on('uncaughtException', (error) => {
-	console.error('❌ Неопрацьоване виключення:', error);
-});
+		// Створюємо HTTP сервер
+		const server = http.createServer(app);
 
-process.on('unhandledRejection', (reason, promise) => {
-	console.error('❌ Неопрацьоване відхилення promise:', promise, 'причина:', reason);
-});
+		// Запускаємо сервер
+		server.listen(PORT, () => {
+			console.log(`✅ Сервер запущено на порту ${PORT}`);
+			console.log(`🔗 API URL: ${process.env.API_URL || `http://localhost:${PORT}`}`);
+		});
 
-// Обробка завершення роботи
-process.on('SIGINT', () => {
-	console.log('🛑 Отримано сигнал SIGINT, завершую роботу...');
-	server.close(() => {
-		console.log('✓ Сервер зупинено');
-		process.exit(0);
-	});
-});
+		// Запускаємо Telegram бота
+		startBot();
 
-process.on('SIGTERM', () => {
-	console.log('🛑 Отримано сигнал SIGTERM, завершую роботу...');
-	server.close(() => {
-		console.log('✓ Сервер зупинено');
-		process.exit(0);
-	});
-});
+		// Обробка завершення роботи
+		process.on('SIGINT', () => {
+			console.log('🛑 Отримано сигнал SIGINT, завершую роботу...');
+			server.close(() => {
+				console.log('✓ Сервер зупинено');
+				process.exit(0);
+			});
+		});
+
+		process.on('SIGTERM', () => {
+			console.log('🛑 Отримано сигнал SIGTERM, завершую роботу...');
+			server.close(() => {
+				console.log('✓ Сервер зупинено');
+				process.exit(0);
+			});
+		});
+	} catch (error) {
+		console.error('❌ Помилка ініціалізації додатку:', error);
+		process.exit(1);
+	}
+};
+
+// Запускаємо додаток
+initialize();

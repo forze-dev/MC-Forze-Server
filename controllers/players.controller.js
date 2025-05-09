@@ -1,5 +1,6 @@
 import { pool } from '../services/db.service.js';
 import { hashPassword } from '../utils/crypto.js';
+import { addRegisteredUser } from '../services/redis.service.js';
 
 async function register(req, res) {
 	const { telegramId, minecraftNick, password, referrerNick } = req.body;
@@ -148,6 +149,8 @@ async function register(req, res) {
 
 			await conn.commit();
 			conn.release();
+
+			await addRegisteredUser(telegramId);
 
 			return res.status(201).json({
 				message: 'User registered',

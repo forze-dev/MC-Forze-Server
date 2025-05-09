@@ -8,8 +8,7 @@ import refferCommand from './commands/reffer.command.js';
 import statisticCommand from './commands/statistic.command.js';
 
 import { registerScene } from './scenes/register.scene.js';
-// Додай інші сцени, наприклад:
-// import { feedbackScene } from './scenes/feedback.scene.js';
+import { handleMessage } from './handlers/messageCounter.handler.js';
 
 // Перевірка наявності токена бота
 if (!process.env.BOT_TOKEN) {
@@ -39,6 +38,9 @@ tgBot.use((ctx, next) => {
 	return next();
 });
 
+// Додаємо обробник повідомлень для підрахунку
+tgBot.use(handleMessage);
+
 // Команди
 tgBot.command('start', startCommand);
 tgBot.command('help', helpCommand);
@@ -48,6 +50,7 @@ tgBot.command('statistic', statisticCommand);
 
 const startBot = async () => {
 	try {
+		// Запускаємо бота
 		await tgBot.launch();
 		console.log('✅ Бот запущено');
 		console.log(`🔗 API URL: ${process.env.API_URL || 'http://localhost:4000'}`);
