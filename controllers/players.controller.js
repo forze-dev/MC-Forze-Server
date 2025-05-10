@@ -315,7 +315,7 @@ async function getPlayerStatsByTelegramId(req, res) {
 			// 1. Основна інформація про гравця з таблиці users
 			const [userInfo] = await conn.query(`
                 SELECT u.minecraft_nick, u.telegram_id, u.game_balance, u.donate_balance, 
-                       u.registered_at, d.discount_percent
+                       u.registered_at, u.messages_count, d.discount_percent
                 FROM users u
                 LEFT JOIN discounts d ON u.telegram_id = d.telegram_id
                 WHERE u.telegram_id = ?
@@ -478,7 +478,7 @@ async function getPlayerStatsByNick(req, res) {
 			// Спочатку знаходимо користувача за нікнеймом
 			const [userInfo] = await conn.query(`
                 SELECT u.minecraft_nick, u.telegram_id, u.game_balance, u.donate_balance, 
-                       u.registered_at, d.discount_percent
+                       u.registered_at, u.messages_count, d.discount_percent
                 FROM users u
                 LEFT JOIN discounts d ON u.telegram_id = d.telegram_id
                 WHERE u.minecraft_nick = ?
