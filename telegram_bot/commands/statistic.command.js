@@ -28,9 +28,9 @@ const statisticCommand = async (ctx) => {
 		message += `👤 *Основна інформація:*\n`;
 		message += `• Нікнейм: \`${stats.minecraft_nick}\`\n`;
 		message += `• Дата реєстрації: ${formatDate(stats.registered_at * 1000)}\n`; // * 1000 бо в базі unix timestamp
-		message += `• Ігровий баланс: ${stats.game_balance || 0} монет\n`;
-		message += `• Донатний баланс: ${stats.donate_balance || 0} ForzeCoin\n`;
-		message += `• Кількість повідомлень в тг: ${stats.messages_count || 0} ForzeCoin\n`;
+		message += `• Ігровий баланс: ${stats.game_balance || 0} GFC\n`;
+		message += `• Донатний баланс: ${stats.donate_balance || 0} DFC\n`;
+		message += `• Кількість повідомлень в тг: ${stats.messages_count || 0}\n`;
 		message += `• Знижка: ${stats.discount_percent || 0}%\n`;
 		message += `• Кількість рефералів: ${stats.referrals_count || 0}\n\n`;
 
