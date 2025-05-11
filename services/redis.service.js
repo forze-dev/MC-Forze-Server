@@ -19,7 +19,7 @@ redisClient.on('error', (err) => {
 });
 
 redisClient.on('reconnecting', () => {
-	console.log('ℹ️ Повторне підключення до Redis...');
+	console.log('📨 Повторне підключення до Redis...');
 });
 
 redisClient.on('connect', () => {

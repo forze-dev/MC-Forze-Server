@@ -80,11 +80,11 @@ const updateUserBalances = async () => {
 		const pendingUsers = await getPendingUpdates();
 
 		if (pendingUsers.length === 0) {
-			console.log('ℹ️ Немає користувачів для оновлення');
+			console.log('📨 Немає користувачів для оновлення');
 			return 0;
 		}
 
-		console.log(`ℹ️ Знайдено ${pendingUsers.length} користувачів для оновлення балансу`);
+		console.log(`📨 Знайдено ${pendingUsers.length} користувачів для оновлення балансу`);
 
 		// Отримуємо всі лічильники повідомлень
 		const messageCounts = await getAllDailyMessageCounts();

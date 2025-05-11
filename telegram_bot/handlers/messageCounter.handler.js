@@ -47,10 +47,10 @@ const handleMessage = async (ctx, next) => {
 		// Логуємо результат (для дебагу)
 		switch (result) {
 			case "COOLDOWN":
-				console.log(`ℹ️ Кулдаун для користувача ${telegramId}`);
+				console.log(`📨 Кулдаун для користувача ${telegramId}`);
 				break;
 			case "LIMIT_REACHED":
-				console.log(`ℹ️ Користувач ${telegramId} досяг денного ліміту`);
+				console.log(`📨 Користувач ${telegramId} досяг денного ліміту`);
 				break;
 			case "ERROR":
 				console.error(`❌ Помилка обліку повідомлення для користувача ${telegramId}`);

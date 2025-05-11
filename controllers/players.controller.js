@@ -62,6 +62,7 @@ async function register(req, res) {
 
 			// Перевіряємо наявність реферала перед додаванням користувача
 			let validReferrerNick = null;
+			let referrerTelegramId = null;
 
 			if (referrerNick) {
 				// Перевіряємо що користувач не намагається вказати себе як реферала
@@ -75,8 +76,9 @@ async function register(req, res) {
 				const [exactReferrer] = await conn.query('SELECT * FROM users WHERE BINARY minecraft_nick = ?', [referrerNick]);
 
 				if (exactReferrer.length > 0) {
-					// Реферал існує з точним збігом регістру - зберігаємо його нік
+					// Реферал існує з точним збігом регістру - зберігаємо його нік та ID
 					validReferrerNick = exactReferrer[0].minecraft_nick;
+					referrerTelegramId = exactReferrer[0].telegram_id;
 					referrerFound = true;
 				} else {
 					// Якщо точного збігу немає, шукаємо без урахування регістру
@@ -100,17 +102,17 @@ async function register(req, res) {
 				[minecraftNick, minecraftNick, hashedPassword, now, '127.0.0.1', 0, 0, 0, 'world', 0, 0]
 			);
 
+			// Визначаємо початковий game_balance в залежності від наявності реферала
+			const initialGameBalance = referrerFound ? 200 : 0;
+
 			// Додаємо користувача в users з перевіреним ніком реферала або null
 			await conn.query(
 				'INSERT INTO users (telegram_id, username, minecraft_nick, referrer_nick, registered_at, messages_count, donate_balance, game_balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-				[telegramId, null, minecraftNick, validReferrerNick, now, 0, 0, 0]
+				[telegramId, null, minecraftNick, validReferrerNick, now, 0, 0, initialGameBalance]
 			);
 
 			// Обробляємо реферальну систему тільки якщо реферал існує
 			if (referrerFound) {
-				const [referrer] = await conn.query('SELECT * FROM users WHERE BINARY minecraft_nick = ?', [validReferrerNick]);
-				const referrerTelegramId = referrer[0].telegram_id;
-
 				// Додаємо запис в таблицю referrals 
 				await conn.query(
 					'INSERT INTO referrals (referrer_telegram_id, referred_telegram_id, referred_nick, confirmed, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -145,6 +147,12 @@ async function register(req, res) {
 						[referrerTelegramId, 1, 2, now]
 					);
 				}
+
+				// Нарахування game_balance для реферера (того, хто запросив)
+				await conn.query(
+					'UPDATE users SET game_balance = game_balance + 100, updated_at = ? WHERE telegram_id = ?',
+					[now, referrerTelegramId]
+				);
 			}
 
 			await conn.commit();
@@ -157,7 +165,11 @@ async function register(req, res) {
 				minecraft_nick: minecraftNick,
 				registered_at: now,
 				referrer_applied: referrerFound,
-				referrerNick: validReferrerNick
+				referrerNick: validReferrerNick,
+				bonus: referrerFound ? {
+					referrer_bonus: 100,
+					user_bonus: 200
+				} : null
 			});
 
 		} catch (error) {
@@ -279,12 +291,28 @@ async function addReferrer(req, res) {
 				);
 			}
 
+			// Нарахування game_balance для реферера (того, хто запросив)
+			await conn.query(
+				'UPDATE users SET game_balance = game_balance + 100, updated_at = ? WHERE telegram_id = ?',
+				[now, referrerTelegramId]
+			);
+
+			// Нарахування game_balance для користувача, який додав реферера
+			await conn.query(
+				'UPDATE users SET game_balance = game_balance + 200, updated_at = ? WHERE telegram_id = ?',
+				[now, telegramId]
+			);
+
 			await conn.commit();
 			conn.release();
 
 			return res.status(200).json({
 				message: 'Referrer added successfully',
-				referrer_nick: exactRefNick
+				referrer_nick: exactRefNick,
+				bonus: {
+					referrer_bonus: 100,
+					user_bonus: 200
+				}
 			});
 
 		} catch (error) {

@@ -7,6 +7,7 @@ import playersRouter from './router/players.router.js';
 import { connectRedis, loadRegisteredUsers } from './services/redis.service.js';
 import { startPeriodicUpdates } from './services/messageCounter.service.js';
 import { pool } from './services/db.service.js';
+import { setupSheduleReportSchedule } from './services/sheduleRewards.service.js';
 
 // Перевірка змінних оточення
 if (!process.env.PORT) {
@@ -74,6 +75,8 @@ const initialize = async () => {
 			console.log(`✅ Сервер запущено на порту ${PORT}`);
 			console.log(`🔗 API URL: ${process.env.API_URL || `http://localhost:${PORT}`}`);
 		});
+
+		setupSheduleReportSchedule()
 
 		// Запускаємо Telegram бота
 		startBot();

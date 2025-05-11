@@ -30,7 +30,7 @@ const statisticCommand = async (ctx) => {
 		message += `• Дата реєстрації: ${formatDate(stats.registered_at * 1000)}\n`; // * 1000 бо в базі unix timestamp
 		message += `• Ігровий баланс: ${stats.game_balance || 0} GFC\n`;
 		message += `• Донатний баланс: ${stats.donate_balance || 0} DFC\n`;
-		message += `• Кількість повідомлень в тг: ${stats.messages_count || 0}\n`;
+		message += `• Кількість смс за 24 год: ${stats.messages_count || 0}\n`;
 		message += `• Знижка: ${stats.discount_percent || 0}%\n`;
 		message += `• Кількість рефералів: ${stats.referrals_count || 0}\n\n`;
 
@@ -67,7 +67,7 @@ const statisticCommand = async (ctx) => {
 				message += `\n\n`;
 			}
 		} else {
-			message += `⚠️ Розширена статистика недоступна. Можливо, ти ще не заходив на сервер.\n\n`;
+			message += `⚠️ Розширена статистика недоступна. Можливо, ти ще не заходив(ла) на сервер.\n\n`;
 		}
 
 		message += `_Заходь на наш сервер: ххххххххххххххххх_`;
