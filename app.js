@@ -8,6 +8,7 @@ import { connectRedis, loadRegisteredUsers } from './services/redis.service.js';
 import { startPeriodicUpdates } from './services/messageCounter.service.js';
 import { pool } from './services/db.service.js';
 import { setupSheduleReportSchedule } from './services/sheduleRewards.service.js';
+import authRouter from './router/auth.router.js';
 
 // Перевірка змінних оточення
 if (!process.env.PORT) {
@@ -35,6 +36,7 @@ app.use((req, res, next) => {
 
 // Маршрути
 app.use('/players', playersRouter);
+app.use('/auth', authRouter);
 
 // Базовий маршрут для перевірки роботи сервера
 app.get('/', (req, res) => {
