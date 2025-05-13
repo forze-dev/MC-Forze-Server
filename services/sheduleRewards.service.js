@@ -159,6 +159,10 @@ async function runSheduleReport() {
 		} else {
 			console.error('❌ Не вказано TARGET_CHAT_ID для відправки звіту');
 		}
+
+		// 4. Очищуємо всі лічильники повідомлень в Redis
+		await redisClient.del(CACHE_KEYS.USER_DAILY_MESSAGES);
+		console.log('✅ Лічильники повідомлень успішно скинуті');
 	} catch (error) {
 		console.error('❌ Помилка формування щоденного звіту:', error);
 	}

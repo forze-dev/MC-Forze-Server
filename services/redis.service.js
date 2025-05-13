@@ -214,18 +214,10 @@ const clearPendingUpdates = async (telegramIds) => {
 	}
 };
 
-/**
- * Видаляє всі кеші після успішного оновлення
- * @param {string[]} processedKeys Ключі, які були оброблені
- */
 const clearProcessedCounts = async (processedKeys) => {
-	try {
-		if (processedKeys.length > 0) {
-			await redisClient.hDel(CACHE_KEYS.USER_DAILY_MESSAGES, ...processedKeys);
-		}
-	} catch (error) {
-		console.error('❌ Помилка очищення оброблених лічильників:', error);
-	}
+	// В цій функції нічого не робимо, щоб зберегти лічильники
+	// Або можна додати маркер, що ці ключі вже оброблені для поточного циклу
+	console.log(`✅ Збережено ${processedKeys.length} лічильників для щоденного звіту`);
 };
 
 export {
