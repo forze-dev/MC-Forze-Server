@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { pool } from './db.service.js';
 import { Telegraf } from 'telegraf';
+import { redisClient, CACHE_KEYS } from './redis.service.js';
 import 'dotenv/config';
 
 // Ініціалізуємо бота лише для відправки повідомлень

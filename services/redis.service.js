@@ -221,6 +221,7 @@ const clearProcessedCounts = async (processedKeys) => {
 };
 
 export {
+	CACHE_KEYS,
 	redisClient,
 	connectRedis,
 	loadRegisteredUsers,
