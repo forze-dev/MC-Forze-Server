@@ -3,8 +3,7 @@ import { pool } from './db.service.js';
 import {
 	getAllDailyMessageCounts,
 	getPendingUpdates,
-	clearPendingUpdates,
-	clearProcessedCounts
+	clearPendingUpdates
 } from './redis.service.js';
 
 const BATCH_SIZE = 50; // Розмір пакету для обробки користувачів
@@ -113,7 +112,9 @@ const updateUserBalances = async () => {
 		}
 
 		if (allProcessedKeys.length > 0) {
-			await clearProcessedCounts(allProcessedKeys);
+			// Лічильники повідомлень не очищаються тут
+			// Будуть очищені під час щоденного скидання через sheduleRewards.service.js
+			console.log(`💾 Залишено ${allProcessedKeys.length} лічильників повідомлень для щоденного звіту`);
 		}
 
 		console.log(`✅ Успішно оновлено баланс для ${totalProcessed} користувачів`);
