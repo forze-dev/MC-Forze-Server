@@ -252,21 +252,29 @@ class MinecraftRconService {
 
 					if (colonIndex > 0) {
 						const role = line.substring(0, colonIndex).trim();
-						const playerName = line.substring(colonIndex + 1).trim();
+						const playersString = line.substring(colonIndex + 1).trim();
 
 						console.log(`🎯 Знайдено двокрапку на позиції ${colonIndex}`);
 						console.log(`👤 Роль: "${role}" (довжина: ${role.length})`);
-						console.log(`🏷️ Ім'я гравця: "${playerName}" (довжина: ${playerName.length})`);
+						console.log(`🏷️ Рядок з гравцями: "${playersString}" (довжина: ${playersString.length})`);
 
-						if (role.length > 0 && playerName.length > 0) {
+						if (role.length > 0 && playersString.length > 0) {
+							// Розбиваємо гравців по комі
+							const playerNames = playersString.split(',').map(name => name.trim()).filter(name => name.length > 0);
+
+							console.log(`🔀 Розбито на ${playerNames.length} гравців:`, playerNames);
+
 							// Робимо першу літеру ролі великою
 							const capitalizedRole = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
-							const formattedPlayer = `[${capitalizedRole}] ${playerName}`;
 
-							console.log(`✅ Додаємо гравця: "${formattedPlayer}"`);
-							players.push(formattedPlayer);
+							// Додаємо кожного гравця окремо
+							playerNames.forEach((playerName, index) => {
+								const formattedPlayer = `[${capitalizedRole}] ${playerName}`;
+								console.log(`✅ Додаємо гравця ${index + 1}: "${formattedPlayer}"`);
+								players.push(formattedPlayer);
+							});
 						} else {
-							console.log(`❌ Пропускаємо через пусту роль або ім'я`);
+							console.log(`❌ Пропускаємо через пусту роль або рядок гравців`);
 						}
 					} else {
 						console.log(`❌ Двокрапка не знайдена в рядку: "${line}"`);
