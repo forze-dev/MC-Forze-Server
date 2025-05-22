@@ -10,8 +10,13 @@ class ShopService {
 	}
 
 	/**
-	 * Обробка покупки товару
+	 * Головний метод обробки покупки товару
 	 * @param {Object} purchaseData - Дані про покупку
+	 * @param {string} purchaseData.telegramId - Telegram ID покупця
+	 * @param {number} purchaseData.productId - ID товару
+	 * @param {string} purchaseData.minecraftNick - Minecraft нікнейм
+	 * @param {number} purchaseData.quantity - Кількість
+	 * @param {number} purchaseData.purchaseId - ID покупки з таблиці purchases
 	 * @returns {Promise<Object>} Результат обробки
 	 */
 	async processPurchase(purchaseData) {
@@ -20,6 +25,8 @@ class ShopService {
 		if (!purchaseId) {
 			throw new Error('Purchase ID є обов\'язковим параметром');
 		}
+
+		console.log(`🔄 Обробка покупки для ${minecraftNick} (Purchase ID: ${purchaseId}, Product ID: ${productId})`);
 
 		try {
 			const conn = await pool.getConnection();
@@ -45,38 +52,46 @@ class ShopService {
 						product.execution_config = JSON.parse(product.execution_config);
 					} catch (e) {
 						console.error('❌ Помилка парсингу execution_config:', e);
-						product.execution_config = null;
+						product.execution_config = {};
 					}
+				} else if (!product.execution_config) {
+					product.execution_config = {};
 				}
 
 				let result = {};
 
 				// Обробляємо залежно від типу товару
 				switch (product.product_type) {
-					case 'item':
-						result = await this.processItemPurchase(conn, product, purchaseData);
-						break;
-					case 'subscription':
-						result = await this.processSubscriptionPurchase(conn, product, purchaseData);
-						break;
 					case 'whitelist':
-						result = await this.processWhitelistPurchase(conn, product, purchaseData);
+						result = await this._processWhitelistPurchase(conn, product, purchaseData);
 						break;
+
+					case 'item':
+						// TODO: Буде реалізовано пізніше
+						throw new Error('Тип товару "item" поки не підтримується');
+
+					case 'subscription':
+						// TODO: Буде реалізовано пізніше
+						throw new Error('Тип товару "subscription" поки не підтримується');
+
 					case 'rank':
-						result = await this.processRankPurchase(conn, product, purchaseData);
-						break;
+						// TODO: Буде реалізовано пізніше
+						throw new Error('Тип товару "rank" поки не підтримується');
+
 					case 'service':
-						result = await this.processServicePurchase(conn, product, purchaseData);
-						break;
+						// TODO: Буде реалізовано пізніше
+						throw new Error('Тип товару "service" поки не підтримується');
+
 					case 'command':
-						result = await this.processCommandPurchase(conn, product, purchaseData);
-						break;
+						// TODO: Буде реалізовано пізніше
+						throw new Error('Тип товару "command" поки не підтримується');
+
 					default:
 						throw new Error(`Невідомий тип товару: ${product.product_type}`);
 				}
 
 				await conn.commit();
-				return { success: true, ...result };
+				return { success: true, productType: product.product_type, ...result };
 
 			} catch (error) {
 				await conn.rollback();
@@ -87,219 +102,137 @@ class ShopService {
 
 		} catch (error) {
 			console.error('❌ Помилка обробки покупки:', error);
-			return { success: false, error: error.message };
-		}
-	}
-
-	/**
-	 * Обробка покупки предмету
-	 */
-	async processItemPurchase(conn, product, purchaseData) {
-		const { telegramId, minecraftNick, quantity = 1, purchaseId } = purchaseData;
-
-		if (product.auto_execute) {
-			return await this.executeProductCommands(conn, product, purchaseData);
-		} else {
-			// Створюємо запис для ручного виконання
-			await this.createExecutionRecord(conn, {
-				purchaseId,
-				telegramId,
-				productId: product.id,
-				executionType: 'item_give',
-				status: 'manual_required'
-			});
-
 			return {
-				message: 'Товар буде видано адміністратором вручну',
-				requiresManualAction: true
+				success: false,
+				error: error.message
 			};
 		}
 	}
 
 	/**
-	 * Обробка покупки підписки
+	 * Приватний метод обробки покупки вайтліста
+	 * @param {Object} conn - З'єднання з базою даних
+	 * @param {Object} product - Інформація про товар
+	 * @param {Object} purchaseData - Дані про покупку
+	 * @returns {Promise<Object>} Результат обробки
 	 */
-	async processSubscriptionPurchase(conn, product, purchaseData) {
+	async _processWhitelistPurchase(conn, product, purchaseData) {
 		const { telegramId, minecraftNick, purchaseId } = purchaseData;
-		const now = Math.floor(Date.now() / 1000);
-		const endDate = now + (product.subscription_duration * 24 * 60 * 60);
 
-		// Створюємо запис підписки
-		await conn.query(
-			`INSERT INTO subscriptions 
-             (telegram_id, product_id, minecraft_nick, start_date, end_date, is_active, created_at) 
-             VALUES (?, ?, ?, ?, ?, 1, ?)`,
-			[telegramId, product.id, minecraftNick, now, endDate, now]
-		);
-
-		// Виконуємо команди активації
-		if (product.auto_execute) {
-			return await this.executeProductCommands(conn, product, purchaseData);
-		}
-
-		return {
-			message: 'Підписка активована',
-			subscriptionEnd: endDate
-		};
-	}
-
-	/**
-	 * Обробка додавання в вайтліст
-	 */
-	async processWhitelistPurchase(conn, product, purchaseData) {
-		if (product.auto_execute) {
-			return await this.executeProductCommands(conn, product, purchaseData);
-		}
-
-		const { purchaseId, telegramId } = purchaseData;
-		await this.createExecutionRecord(conn, {
-			purchaseId,
-			telegramId,
-			productId: product.id,
-			executionType: 'whitelist_add',
-			status: 'manual_required'
-		});
-
-		return {
-			message: 'Запит на додавання в вайтліст створено',
-			requiresManualAction: true
-		};
-	}
-
-	/**
-	 * Обробка присвоєння рангу
-	 */
-	async processRankPurchase(conn, product, purchaseData) {
-		if (product.auto_execute) {
-			return await this.executeProductCommands(conn, product, purchaseData);
-		}
-
-		const { purchaseId, telegramId } = purchaseData;
-		await this.createExecutionRecord(conn, {
-			purchaseId,
-			telegramId,
-			productId: product.id,
-			executionType: 'rank_set',
-			status: 'manual_required'
-		});
-
-		return {
-			message: 'Запит на присвоєння рангу створено',
-			requiresManualAction: true
-		};
-	}
-
-	/**
-	 * Обробка сервісних товарів
-	 */
-	async processServicePurchase(conn, product, purchaseData) {
-		const { purchaseId, telegramId } = purchaseData;
-
-		// Сервісні товари зазвичай потребують ручної обробки
-		await this.createExecutionRecord(conn, {
-			purchaseId,
-			telegramId,
-			productId: product.id,
-			executionType: 'service_activate',
-			status: 'manual_required'
-		});
-
-		return {
-			message: 'Запит на сервіс створено. Адміністратор зв\'яжеться з вами',
-			requiresManualAction: true
-		};
-	}
-
-	/**
-	 * Обробка кастомних команд
-	 */
-	async processCommandPurchase(conn, product, purchaseData) {
-		if (product.auto_execute && !product.requires_manual_approval) {
-			return await this.executeProductCommands(conn, product, purchaseData);
-		}
-
-		const { purchaseId, telegramId } = purchaseData;
-		await this.createExecutionRecord(conn, {
-			purchaseId,
-			telegramId,
-			productId: product.id,
-			executionType: 'rcon_command',
-			status: product.requires_manual_approval ? 'manual_required' : 'pending'
-		});
-
-		return {
-			message: product.requires_manual_approval
-				? 'Команда буде виконана після перевірки адміністратором'
-				: 'Команда додана в чергу на виконання',
-			requiresManualAction: product.requires_manual_approval
-		};
-	}
-
-	/**
-	 * Виконання команд товару через RCON
-	 */
-	async executeProductCommands(conn, product, purchaseData) {
-		const { telegramId, minecraftNick, quantity = 1, purchaseId } = purchaseData;
-		const config = product.execution_config;
-
-		if (!config || !config.rcon_commands) {
-			throw new Error('Конфігурація команд відсутня');
-		}
-
-		const serverId = config.server_id || 'MFS';
-		const commands = Array.isArray(config.rcon_commands) ? config.rcon_commands : [config.rcon_commands];
-		const results = [];
+		console.log(`🎯 Обробка вайтліста для ${minecraftNick}`);
 
 		// Створюємо запис виконання
-		const executionId = await this.createExecutionRecord(conn, {
-			purchaseId,
-			telegramId,
-			productId: product.id,
-			executionType: 'rcon_command',
-			status: 'pending'
-		});
+		const now = Math.floor(Date.now() / 1000);
+		const [executionResult] = await conn.query(
+			`INSERT INTO product_executions 
+			 (purchase_id, telegram_id, product_id, execution_type, execution_status, created_at) 
+			 VALUES (?, ?, ?, 'whitelist_add', 'pending', ?)`,
+			[purchaseId, telegramId, product.id, now]
+		);
 
-		try {
-			for (let command of commands) {
-				// Замінюємо плейсхолдери
-				const processedCommand = this.replacePlaceholders(command, {
-					minecraft_nick: minecraftNick,
-					quantity: quantity,
-					item_id: product.item_id || 'minecraft:diamond'
-				});
+		const executionId = executionResult.insertId;
 
-				console.log(`🎯 Виконання команди для товару ${product.name}: ${processedCommand}`);
+		// Перевіряємо чи потрібно автоматично виконувати
+		if (product.auto_execute && !product.requires_manual_approval) {
+			console.log(`🚀 Автоматичне додавання ${minecraftNick} до вайтліста`);
 
-				const result = await rconService.executeCommand(serverId, processedCommand);
-				results.push({
-					command: processedCommand,
-					success: result.success,
-					response: result.response || result.error
-				});
-
-				if (!result.success) {
-					throw new Error(`Помилка виконання команди: ${result.error}`);
-				}
-
-				// Невелика затримка між командами для уникнення спаму
-				if (commands.length > 1) {
-					await new Promise(resolve => setTimeout(resolve, 500));
-				}
-			}
-
-			// Оновлюємо статус виконання
-			await conn.query(
-				'UPDATE product_executions SET execution_status = ?, execution_result = ?, executed_at = ? WHERE id = ?',
-				['success', JSON.stringify(results), Math.floor(Date.now() / 1000), executionId]
+			const executionResult = await this._executeWhitelistCommand(
+				product.execution_config,
+				minecraftNick,
+				conn,
+				executionId
 			);
 
 			return {
-				message: 'Товар успішно видано',
-				executionResults: results
+				message: 'Тебе автоматично додано до вайтліста!',
+				executionResults: executionResult.executionResults,
+				autoExecuted: true
 			};
+		} else {
+			// Потрібна ручна обробка
+			await conn.query(
+				'UPDATE product_executions SET execution_status = ? WHERE id = ?',
+				['manual_required', executionId]
+			);
+
+			return {
+				message: product.requires_manual_approval
+					? 'Запит на додавання до вайтліста відправлено. Адміністратор розгляне його найближчим часом.'
+					: 'Запит на додавання до вайтліста створено.',
+				requiresManualAction: true,
+				autoExecuted: false
+			};
+		}
+	}
+
+	/**
+	 * Приватний метод виконання команди додавання до вайтліста
+	 * @param {Object} executionConfig - Конфігурація виконання
+	 * @param {string} minecraftNick - Minecraft нікнейм
+	 * @param {Object} conn - З'єднання з базою даних
+	 * @param {number} executionId - ID запису виконання
+	 * @returns {Promise<Object>} Результат виконання
+	 */
+	async _executeWhitelistCommand(executionConfig, minecraftNick, conn, executionId) {
+		try {
+			const serverId = executionConfig.server_id || 'MFS';
+
+			// Команда для додавання до вайтліста (стандартна команда Minecraft)
+			let command = `whitelist add ${minecraftNick}`;
+
+			// Якщо в конфігурації є кастомна команда, використовуємо її
+			if (executionConfig.rcon_commands && Array.isArray(executionConfig.rcon_commands)) {
+				command = this._replacePlaceholders(executionConfig.rcon_commands[0], {
+					minecraft_nick: minecraftNick
+				});
+			} else if (executionConfig.whitelist_command) {
+				command = this._replacePlaceholders(executionConfig.whitelist_command, {
+					minecraft_nick: minecraftNick
+				});
+			}
+
+			console.log(`🎯 Виконання команди додавання до вайтліста: ${command}`);
+
+			// Виконуємо команду через RCON
+			const result = await rconService.executeCommand(serverId, command);
+
+			const executionResults = [{
+				command: command,
+				success: result.success,
+				response: result.response || result.error
+			}];
+
+			const now = Math.floor(Date.now() / 1000);
+
+			if (result.success) {
+				// Успішне виконання
+				await conn.query(
+					'UPDATE product_executions SET execution_status = ?, execution_result = ?, command_executed = ?, executed_at = ? WHERE id = ?',
+					['success', JSON.stringify(executionResults), command, now, executionId]
+				);
+
+				console.log(`✅ Гравця ${minecraftNick} успішно додано до вайтліста`);
+
+				return {
+					success: true,
+					message: 'Тебе успішно додано до вайтліста сервера!',
+					executionResults: executionResults
+				};
+			} else {
+				// Помилка виконання
+				await conn.query(
+					'UPDATE product_executions SET execution_status = ?, execution_result = ?, command_executed = ?, retry_count = retry_count + 1 WHERE id = ?',
+					['failed', result.error, command, executionId]
+				);
+
+				throw new Error(`Помилка додавання до вайтліста: ${result.error}`);
+			}
 
 		} catch (error) {
+			console.error('❌ Помилка виконання команди вайтліста:', error);
+
 			// Оновлюємо статус помилки
+			const now = Math.floor(Date.now() / 1000);
 			await conn.query(
 				'UPDATE product_executions SET execution_status = ?, execution_result = ?, retry_count = retry_count + 1 WHERE id = ?',
 				['failed', error.message, executionId]
@@ -310,26 +243,12 @@ class ShopService {
 	}
 
 	/**
-	 * Створення запису про виконання
+	 * Приватний метод заміни плейсхолдерів у командах
+	 * @param {string} command - Команда з плейсхолдерами
+	 * @param {Object} data - Дані для заміни
+	 * @returns {string} Оброблена команда
 	 */
-	async createExecutionRecord(conn, data) {
-		const { purchaseId, telegramId, productId, executionType, status = 'pending' } = data;
-		const now = Math.floor(Date.now() / 1000);
-
-		const [result] = await conn.query(
-			`INSERT INTO product_executions 
-             (purchase_id, telegram_id, product_id, execution_type, execution_status, created_at) 
-             VALUES (?, ?, ?, ?, ?, ?)`,
-			[purchaseId, telegramId, productId, executionType, status, now]
-		);
-
-		return result.insertId;
-	}
-
-	/**
-	 * Заміна плейсхолдерів у командах
-	 */
-	replacePlaceholders(command, data) {
+	_replacePlaceholders(command, data) {
 		let result = command;
 
 		Object.keys(data).forEach(key => {
@@ -342,12 +261,13 @@ class ShopService {
 
 	/**
 	 * Обробка невиконаних команд
+	 * Запускається за розкладом для повторної спроби невдалих виконань
 	 */
 	async processPendingExecutions() {
 		if (this.processing) return;
 
 		this.processing = true;
-		console.log('🔄 Обробка невиконаних команд товарів...');
+		console.log('🔄 Обробка невиконаних команд...');
 
 		try {
 			const conn = await pool.getConnection();
@@ -355,18 +275,18 @@ class ShopService {
 			try {
 				// Отримуємо невиконані записи
 				const [executions] = await conn.query(`
-                    SELECT pe.*, p.name as product_name, p.execution_config, u.minecraft_nick
-                    FROM product_executions pe
-                    JOIN products p ON pe.product_id = p.id
-                    JOIN users u ON pe.telegram_id = u.telegram_id
-                    WHERE pe.execution_status = 'pending' 
-                    AND pe.retry_count < pe.max_retries
-                    ORDER BY pe.created_at ASC
-                    LIMIT 10
-                `);
+					SELECT pe.*, p.name as product_name, p.product_type, p.execution_config, u.minecraft_nick
+					FROM product_executions pe
+					JOIN products p ON pe.product_id = p.id
+					JOIN users u ON pe.telegram_id = u.telegram_id
+					WHERE pe.execution_status = 'pending' 
+					AND pe.retry_count < pe.max_retries
+					ORDER BY pe.created_at ASC
+					LIMIT 10
+				`);
 
 				for (const execution of executions) {
-					await this.retryExecution(conn, execution);
+					await this._retryExecution(conn, execution);
 				}
 
 			} finally {
@@ -381,59 +301,83 @@ class ShopService {
 	}
 
 	/**
-	 * Повторна спроба виконання команди
+	 * Приватний метод повторної спроби виконання команди
+	 * @param {Object} conn - З'єднання з базою даних
+	 * @param {Object} execution - Запис виконання
 	 */
-	async retryExecution(conn, execution) {
+	async _retryExecution(conn, execution) {
 		try {
-			let config;
+			console.log(`🔄 Повторна спроба виконання ${execution.execution_type} для ${execution.minecraft_nick}`);
+
+			// Обробляємо залежно від типу виконання
+			switch (execution.execution_type) {
+				case 'whitelist_add':
+					await this._retryWhitelistExecution(conn, execution);
+					break;
+
+				// Тут будуть інші типи в майбутньому
+				default:
+					console.log(`⚠️ Невідомий тип виконання: ${execution.execution_type}`);
+			}
+
+		} catch (error) {
+			console.error(`❌ Помилка повторної спроби для ${execution.minecraft_nick}:`, error);
+		}
+	}
+
+	/**
+	 * Приватний метод повторної спроби виконання команди вайтліста
+	 * @param {Object} conn - З'єднання з базою даних
+	 * @param {Object} execution - Запис виконання
+	 */
+	async _retryWhitelistExecution(conn, execution) {
+		try {
+			let executionConfig = {};
 			try {
-				config = typeof execution.execution_config === 'string'
+				executionConfig = typeof execution.execution_config === 'string'
 					? JSON.parse(execution.execution_config)
-					: execution.execution_config;
+					: execution.execution_config || {};
 			} catch (e) {
 				throw new Error('Некоректна конфігурація команд');
 			}
 
-			const serverId = config.server_id || 'MFS';
+			const serverId = executionConfig.server_id || 'MFS';
 
-			if (!config.rcon_commands) {
-				throw new Error('Команди відсутні');
+			let command = `whitelist add ${execution.minecraft_nick}`;
+
+			// Якщо в конфігурації є кастомна команда
+			if (executionConfig.rcon_commands && Array.isArray(executionConfig.rcon_commands)) {
+				command = this._replacePlaceholders(executionConfig.rcon_commands[0], {
+					minecraft_nick: execution.minecraft_nick
+				});
+			} else if (executionConfig.whitelist_command) {
+				command = this._replacePlaceholders(executionConfig.whitelist_command, {
+					minecraft_nick: execution.minecraft_nick
+				});
 			}
 
-			const commands = Array.isArray(config.rcon_commands) ? config.rcon_commands : [config.rcon_commands];
-			const results = [];
+			console.log(`🎯 Повторна команда вайтліста: ${command}`);
 
-			for (let command of commands) {
-				const processedCommand = this.replacePlaceholders(command, {
-					minecraft_nick: execution.minecraft_nick,
-					quantity: 1, // можна зберігати в execution_data
-					item_id: 'minecraft:diamond' // теж можна зберігати
-				});
+			const result = await rconService.executeCommand(serverId, command);
+			const executionResults = [{
+				command: command,
+				success: result.success,
+				response: result.response || result.error
+			}];
 
-				const result = await rconService.executeCommand(serverId, processedCommand);
-				results.push({
-					command: processedCommand,
-					success: result.success,
-					response: result.response || result.error
-				});
+			const now = Math.floor(Date.now() / 1000);
 
-				if (!result.success) {
-					throw new Error(`Помилка команди: ${result.error}`);
-				}
+			if (result.success) {
+				// Успішне виконання
+				await conn.query(
+					'UPDATE product_executions SET execution_status = ?, execution_result = ?, command_executed = ?, executed_at = ? WHERE id = ?',
+					['success', JSON.stringify(executionResults), command, now, execution.id]
+				);
 
-				// Затримка між командами
-				if (commands.length > 1) {
-					await new Promise(resolve => setTimeout(resolve, 500));
-				}
+				console.log(`✅ Повторна спроба успішна: гравця ${execution.minecraft_nick} додано до вайтліста`);
+			} else {
+				throw new Error(`Помилка команди: ${result.error}`);
 			}
-
-			// Успішне виконання
-			await conn.query(
-				'UPDATE product_executions SET execution_status = ?, execution_result = ?, executed_at = ? WHERE id = ?',
-				['success', JSON.stringify(results), Math.floor(Date.now() / 1000), execution.id]
-			);
-
-			console.log(`✅ Успішно виконано команди для товару ${execution.product_name}`);
 
 		} catch (error) {
 			// Збільшуємо лічильник спроб
@@ -445,90 +389,7 @@ class ShopService {
 				[newRetryCount, status, error.message, execution.id]
 			);
 
-			console.log(`❌ Спроба ${newRetryCount}/${execution.max_retries} для товару ${execution.product_name}: ${error.message}`);
-		}
-	}
-
-	/**
-	 * Перевірка та обробка закінчених підписок
-	 */
-	async processExpiredSubscriptions() {
-		console.log('🔄 Перевірка закінчених підписок...');
-
-		try {
-			const conn = await pool.getConnection();
-			const now = Math.floor(Date.now() / 1000);
-
-			try {
-				// Знаходимо закінчені підписки
-				const [expiredSubs] = await conn.query(`
-                    SELECT s.*, p.execution_config, u.minecraft_nick
-                    FROM subscriptions s
-                    JOIN products p ON s.product_id = p.id
-                    JOIN users u ON s.telegram_id = u.telegram_id
-                    WHERE s.is_active = 1 AND s.end_date <= ?
-                `, [now]);
-
-				for (const subscription of expiredSubs) {
-					await this.processExpiredSubscription(conn, subscription);
-				}
-
-			} finally {
-				conn.release();
-			}
-
-		} catch (error) {
-			console.error('❌ Помилка обробки закінчених підписок:', error);
-		}
-	}
-
-	/**
-	 * Обробка окремої закінченої підписки
-	 */
-	async processExpiredSubscription(conn, subscription) {
-		try {
-			let config;
-			try {
-				config = typeof subscription.execution_config === 'string'
-					? JSON.parse(subscription.execution_config)
-					: subscription.execution_config;
-			} catch (e) {
-				console.error(`❌ Некоректна конфігурація для підписки ${subscription.id}:`, e);
-				config = {};
-			}
-
-			// Виконуємо команди закінчення підписки
-			if (config.expiry_commands && Array.isArray(config.expiry_commands)) {
-				const serverId = config.server_id || 'MFS';
-
-				for (let command of config.expiry_commands) {
-					const processedCommand = this.replacePlaceholders(command, {
-						minecraft_nick: subscription.minecraft_nick
-					});
-
-					const result = await rconService.executeCommand(serverId, processedCommand);
-
-					if (!result.success) {
-						console.error(`❌ Помилка виконання команди закінчення підписки: ${result.error}`);
-					} else {
-						console.log(`✅ Виконано команду закінчення підписки: ${processedCommand}`);
-					}
-
-					// Затримка між командами
-					await new Promise(resolve => setTimeout(resolve, 500));
-				}
-			}
-
-			// Деактивуємо підписку
-			await conn.query(
-				'UPDATE subscriptions SET is_active = 0, updated_at = ? WHERE id = ?',
-				[Math.floor(Date.now() / 1000), subscription.id]
-			);
-
-			console.log(`✅ Підписка ${subscription.id} для ${subscription.minecraft_nick} деактивована`);
-
-		} catch (error) {
-			console.error(`❌ Помилка обробки закінченої підписки ${subscription.id}:`, error);
+			console.log(`❌ Спроба ${newRetryCount}/${execution.max_retries} для вайтліста ${execution.minecraft_nick}: ${error.message}`);
 		}
 	}
 
@@ -541,12 +402,57 @@ class ShopService {
 			this.processPendingExecutions();
 		});
 
-		// Перевірка закінчених підписок кожну годину
-		cron.schedule('0 * * * *', () => {
-			this.processExpiredSubscriptions();
-		});
-
 		console.log('✅ Планувальник завдань магазину запущено');
+	}
+
+	/**
+	 * Отримання статистики виконань
+	 * @param {string} executionType - Тип виконання (опціонально)
+	 * @returns {Promise<Object>} Статистика
+	 */
+	async getExecutionStats(executionType = null) {
+		try {
+			const conn = await pool.getConnection();
+
+			try {
+				let query = `
+					SELECT 
+						execution_type,
+						execution_status,
+						COUNT(*) as count
+					FROM product_executions 
+				`;
+
+				const params = [];
+
+				if (executionType) {
+					query += ' WHERE execution_type = ?';
+					params.push(executionType);
+				}
+
+				query += ' GROUP BY execution_type, execution_status';
+
+				const [stats] = await conn.query(query, params);
+
+				// Групуємо статистику за типом виконання
+				const result = {};
+				stats.forEach(stat => {
+					if (!result[stat.execution_type]) {
+						result[stat.execution_type] = {};
+					}
+					result[stat.execution_type][stat.execution_status] = stat.count;
+				});
+
+				return result;
+
+			} finally {
+				conn.release();
+			}
+
+		} catch (error) {
+			console.error('❌ Помилка отримання статистики:', error);
+			return {};
+		}
 	}
 }
 
