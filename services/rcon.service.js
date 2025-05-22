@@ -217,6 +217,8 @@ class MinecraftRconService {
 		try {
 			const result = await this.executeCommand(serverId, 'list');
 
+			console.log("[RCON] -", result);
+
 			if (result.success && result.response) {
 				// Парсимо відповідь для отримання списку гравців
 				const playerMatch = result.response.match(/There are \d+ of a max of \d+ players online: (.+)/);
