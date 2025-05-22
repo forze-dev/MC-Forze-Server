@@ -44,6 +44,7 @@ app.use('/players', playersRouter);
 app.use('/auth', authRouter);
 app.use('/rcon-server', serverActionsRouter);
 app.use('/shop', shopRouter);
+app.use('/uploads', express.static('uploads'));
 
 // Базовий маршрут для перевірки роботи сервера
 app.get('/', (req, res) => {
