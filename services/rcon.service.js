@@ -217,40 +217,63 @@ class MinecraftRconService {
 		try {
 			const result = await this.executeCommand(serverId, 'list');
 
+			console.log("[RCON RAW] -", result);
+
 			if (result.success && result.response) {
 				// Очищаємо кольорові коди з відповіді
 				const cleanResponse = result.response.replace(/§[0-9a-fk-or]/gi, '');
 
 				console.log("[RCON CLEAN] -", cleanResponse);
+				console.log("[RCON CLEAN JSON] -", JSON.stringify(cleanResponse));
 
-				// Парсимо відповідь для отримання списку гравців
-				// Шукаємо шаблон для вашого формату відповіді
 				let players = [];
 
-				// Спробуємо знайти гравців у різних форматах
-				// Формат 1: стандартний Minecraft "There are X of a max of Y players online: player1, player2"
-				const standardMatch = cleanResponse.match(/There are \d+ (?:of a max of|out of maximum) \d+ players online[:.]\s*(.+)/i);
+				// Розбиваємо на рядки
+				const lines = cleanResponse.split('\n');
+				console.log(`📝 Розбито на ${lines.length} рядків:`);
 
-				if (standardMatch && standardMatch[1] && standardMatch[1].trim() !== '') {
-					players = standardMatch[1].split(',').map(name => name.trim()).filter(name => name.length > 0);
-				} else {
-					// Формат 2: ваш кастомний формат з новими рядками
-					// Розбиваємо на рядки і шукаємо гравців
-					const lines = cleanResponse.split('\n');
+				lines.forEach((line, index) => {
+					console.log(`Рядок ${index}: "${line}" (довжина: ${line.length})`);
+				});
 
-					for (const line of lines) {
-						// Шукаємо рядки з форматом "роль: нікнейм"
-						const playerMatch = line.match(/^([^:]+):\s*(.+)$/);
-						if (playerMatch && playerMatch[1] && playerMatch[2]) {
-							const role = playerMatch[1].trim();
-							const playerName = playerMatch[2].trim();
-							if (playerName && playerName.length > 0 && role && role.length > 0) {
-								// Форматуємо як "[Роль] Нікнейм"
-								players.push(`[${role}] ${playerName}`);
-							}
+				// Проходимо по кожному рядку
+				for (let i = 0; i < lines.length; i++) {
+					const line = lines[i].trim(); // Видаляємо пробіли з початку і кінця
+
+					console.log(`🔍 Обробляємо рядок ${i}: "${line}"`);
+
+					if (line === '') {
+						console.log(`⏭️ Пропускаємо пустий рядок ${i}`);
+						continue;
+					}
+
+					// Шукаємо формат "роль: нікнейм"
+					const colonIndex = line.indexOf(':');
+
+					if (colonIndex > 0) {
+						const role = line.substring(0, colonIndex).trim();
+						const playerName = line.substring(colonIndex + 1).trim();
+
+						console.log(`🎯 Знайдено двокрапку на позиції ${colonIndex}`);
+						console.log(`👤 Роль: "${role}" (довжина: ${role.length})`);
+						console.log(`🏷️ Ім'я гравця: "${playerName}" (довжина: ${playerName.length})`);
+
+						if (role.length > 0 && playerName.length > 0) {
+							// Робимо першу літеру ролі великою
+							const capitalizedRole = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+							const formattedPlayer = `[${capitalizedRole}] ${playerName}`;
+
+							console.log(`✅ Додаємо гравця: "${formattedPlayer}"`);
+							players.push(formattedPlayer);
+						} else {
+							console.log(`❌ Пропускаємо через пусту роль або ім'я`);
 						}
+					} else {
+						console.log(`❌ Двокрапка не знайдена в рядку: "${line}"`);
 					}
 				}
+
+				console.log(`🎯 Фінальний список гравців (${players.length}):`, players);
 
 				return {
 					success: true,
@@ -258,8 +281,11 @@ class MinecraftRconService {
 				};
 			}
 
+			console.log("❌ Результат неуспішний або немає відповіді");
 			return result;
+
 		} catch (error) {
+			console.error("❌ Помилка в getOnlinePlayers:", error);
 			return {
 				success: false,
 				error: error.message
