@@ -37,6 +37,7 @@ const handleMessage = async (ctx, next) => {
 
 		// Перевіряємо, чи зареєстрований користувач (з Redis кешу)
 		const isRegistered = await isUserRegistered(telegramId);
+
 		if (!isRegistered) {
 			return next();
 		}
@@ -56,7 +57,7 @@ const handleMessage = async (ctx, next) => {
 				console.error(`❌ Помилка обліку повідомлення для користувача ${telegramId}`);
 				break;
 			default:
-				console.log(`✅ Повідомлення зараховано для ${telegramId}: ${result}/200`);
+				console.log(`✅ Повідомлення зараховано для ${telegramId}`);
 		}
 	} catch (error) {
 		console.error('❌ Помилка обробки повідомлення:', error);

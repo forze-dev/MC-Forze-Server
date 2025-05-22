@@ -1,0 +1,56 @@
+name: Deploy Bot
+
+# Коли запускати workflow
+on:
+  push:
+    branches: [ main ] 
+
+# Налаштування для деплою
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Завантажуємо код з репозиторію
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Встановлюємо Node.js (додав для стабільності)
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.19.1'
+        cache: 'npm'
+    
+    # Встановлюємо залежності
+    - name: Install dependencies
+      run: npm install
+    
+    # Деплой на сервер
+    - name: Deploy to server
+      if: github.ref == 'refs/heads/main'  # тільки з main гілки
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          cd /var/www/api-forze-space
+          echo "📂 Pulling latest changes..."
+          git pull origin main
+          echo "📦 Installing dependencies..."
+          npm install --production
+          echo "🔄 Restarting server..."
+          pm2 restart 1
+          echo "✅ Bot restarted successfully!"
+          pm2 status
+
+    # Відправка повідомлення про успішний деплой
+    - name: Notify success
+      if: success()
+      run: echo "✅ Server deployed successfully!"
+    
+    - name: Notify failure
+      if: failure()
+      run: echo "❌ Server deployment failed!"

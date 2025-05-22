@@ -28,9 +28,12 @@ redisClient.on('connect', () => {
 
 // Кешовані дані зареєстрованих користувачів
 const CACHE_KEYS = {
-	REGISTERED_USERS: 'registered_users',                // Set для зареєстрованих користувачів
+	USER_PROCESSED_MESSAGES: 'processed_messages',      // Кількість вже оброблених повідомлень
+	USER_PROCESSED_BALANCES: 'processed_balances',      // Кількість вже оброблених балансів
+	REGISTERED_USERS: 'registered_users',               // Set для зареєстрованих користувачів
 	USER_DAILY_MESSAGES: 'daily_messages',              // Hash для всіх користувачів і кількості повідомлень
 	USER_LAST_MESSAGE: 'last_message',                  // Hash для часу останнього повідомлення
+	USER_BALANCE: 'user_balance',                       // Hash для балансу повідомлень користувача
 	PENDING_UPDATES: 'pending_updates',                 // Set для списку користувачів з оновленнями
 	CURRENT_PERIOD_KEY: 'current_message_period',       // Ключ для визначення поточного періоду підрахунку
 	PERIOD_START_TIME: 'period_start_time',             // Час початку поточного періоду (timestamp)
@@ -170,6 +173,10 @@ const resetMessagePeriod = async () => {
 
 		// Скидаємо лічильники повідомлень
 		await redisClient.del(CACHE_KEYS.USER_DAILY_MESSAGES);
+		await redisClient.del(CACHE_KEYS.USER_PROCESSED_MESSAGES);
+		await redisClient.del(CACHE_KEYS.USER_PROCESSED_BALANCES); // Додаємо скидання оброблених балансів
+		await redisClient.del(CACHE_KEYS.USER_BALANCE);
+		await redisClient.del(CACHE_KEYS.PENDING_UPDATES);
 
 		// Встановлюємо новий період
 		return await setupNewMessagePeriod();
@@ -190,6 +197,21 @@ const getUserMessageCount = async (telegramId) => {
 		return count ? parseInt(count) : 0;
 	} catch (error) {
 		console.error(`❌ Помилка отримання кількості повідомлень для ${telegramId}:`, error);
+		return 0;
+	}
+};
+
+/**
+ * Отримує поточний баланс повідомлень користувача
+ * @param {string} telegramId ID користувача в Telegram
+ * @returns {Promise<number>} Баланс повідомлень
+ */
+const getUserBalance = async (telegramId) => {
+	try {
+		const balance = await redisClient.hGet(CACHE_KEYS.USER_BALANCE, telegramId);
+		return balance ? parseInt(balance) : 0;
+	} catch (error) {
+		console.error(`❌ Помилка отримання балансу повідомлень для ${telegramId}:`, error);
 		return 0;
 	}
 };
@@ -267,25 +289,29 @@ const incrementUserMessages = async (telegramId) => {
 
 		// Отримуємо час останнього повідомлення
 		const lastMessage = await redisClient.hGet(CACHE_KEYS.USER_LAST_MESSAGE, telegramId);
+
 		if (lastMessage && now - parseInt(lastMessage) < MESSAGE_COOLDOWN) {
 			return "COOLDOWN"; // Кулдаун активний
 		}
 
-		// Отримуємо поточну кількість повідомлень
+		// Отримуємо поточну кількість повідомлень і баланс
 		const count = await redisClient.hGet(CACHE_KEYS.USER_DAILY_MESSAGES, telegramId);
 		const currentCount = count ? parseInt(count) : 0;
 
-		// Перевіряємо ліміт
-		if (currentCount >= MAX_MESSAGES_PER_PERIOD) {
-			return "LIMIT_REACHED";
-		}
+		// Отримуємо поточний баланс (або створюємо новий ключ)
+		const balance = await redisClient.hGet(CACHE_KEYS.USER_BALANCE, telegramId);
+		let currentBalance = balance ? parseInt(balance) : 0;
+
+		// Збільшуємо лічильник загальної кількості повідомлень
+		const newCount = currentCount + 1;
+		await redisClient.hSet(CACHE_KEYS.USER_DAILY_MESSAGES, telegramId, newCount.toString());
+
+		// Збільшуємо баланс, але обмежуємо його на рівні MAX_MESSAGES_PER_PERIOD
+		currentBalance = Math.min(currentBalance + 1, MAX_MESSAGES_PER_PERIOD);
+		await redisClient.hSet(CACHE_KEYS.USER_BALANCE, telegramId, currentBalance.toString());
 
 		// Оновлюємо час останнього повідомлення
 		await redisClient.hSet(CACHE_KEYS.USER_LAST_MESSAGE, telegramId, now.toString());
-
-		// Збільшуємо лічильник
-		const newCount = currentCount + 1;
-		await redisClient.hSet(CACHE_KEYS.USER_DAILY_MESSAGES, telegramId, newCount.toString());
 
 		// Отримуємо час кінця періоду
 		const periodEnd = await redisClient.get(CACHE_KEYS.PERIOD_END_TIME);
@@ -293,22 +319,25 @@ const incrementUserMessages = async (telegramId) => {
 			// Визначаємо час до кінця періоду
 			const expirySeconds = Math.floor((parseInt(periodEnd) - now) / 1000);
 			if (expirySeconds > 0) {
-				// Встановлюємо час життя для хешів, якщо це необхідно
+				// Встановлюємо час життя для хешів
 				await redisClient.expire(CACHE_KEYS.USER_DAILY_MESSAGES, expirySeconds);
 				await redisClient.expire(CACHE_KEYS.USER_LAST_MESSAGE, expirySeconds);
+				await redisClient.expire(CACHE_KEYS.USER_BALANCE, expirySeconds);
 			}
 		}
 
 		// Додаємо користувача до множини для оновлення
 		await redisClient.sAdd(CACHE_KEYS.PENDING_UPDATES, telegramId.toString());
 
-		return newCount;
+		return {
+			count: newCount,
+			balance: currentBalance
+		};
 	} catch (error) {
 		console.error(`❌ Помилка збільшення лічильника повідомлень для ${telegramId}:`, error);
 		return "ERROR";
 	}
 };
-
 /**
  * Отримує всі щоденні лічильники повідомлень
  * @returns {Promise<Object>} Об'єкт з кількістю повідомлень для кожного користувача
@@ -318,6 +347,19 @@ const getAllDailyMessageCounts = async () => {
 		return await redisClient.hGetAll(CACHE_KEYS.USER_DAILY_MESSAGES);
 	} catch (error) {
 		console.error('❌ Помилка отримання щоденних лічильників повідомлень:', error);
+		return {};
+	}
+};
+
+/**
+ * Отримує всі баланси повідомлень користувачів
+ * @returns {Promise<Object>} Об'єкт з балансами повідомлень для кожного користувача
+ */
+const getAllUserBalances = async () => {
+	try {
+		return await redisClient.hGetAll(CACHE_KEYS.USER_BALANCE);
+	} catch (error) {
+		console.error('❌ Помилка отримання балансів повідомлень:', error);
 		return {};
 	}
 };
@@ -378,6 +420,8 @@ const getTopMessageUsers = async (limit = 10) => {
 const resetAllMessageCounts = async () => {
 	try {
 		await redisClient.del(CACHE_KEYS.USER_DAILY_MESSAGES);
+		await redisClient.del(CACHE_KEYS.USER_PROCESSED_MESSAGES);
+		await redisClient.del(CACHE_KEYS.USER_BALANCE);  // Скидаємо баланси
 		await redisClient.del(CACHE_KEYS.PENDING_UPDATES);
 		console.log('✅ Всі лічильники повідомлень скинуто');
 		return true;
@@ -388,6 +432,7 @@ const resetAllMessageCounts = async () => {
 };
 
 export {
+	CACHE_KEYS,
 	redisClient,
 	connectRedis,
 	loadRegisteredUsers,
@@ -395,11 +440,13 @@ export {
 	isUserRegistered,
 	incrementUserMessages,
 	getAllDailyMessageCounts,
+	getAllUserBalances,
 	getPendingUpdates,
 	clearPendingUpdates,
 	getUserMessageCount,
 	getTopMessageUsers,
 	resetAllMessageCounts,
 	resetMessagePeriod,
+	getUserBalance,
 	initializeMessagePeriod
 };

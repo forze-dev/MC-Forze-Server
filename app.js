@@ -9,6 +9,9 @@ import { startPeriodicUpdates } from './services/messageCounter.service.js';
 import { pool } from './services/db.service.js';
 import { setupScheduleReportSchedule } from './services/sheduleRewards.service.js';
 import authRouter from './router/auth.router.js';
+import dns from 'node:dns';
+
+dns.setDefaultResultOrder('ipv4first');
 
 // Перевірка змінних оточення
 if (!process.env.PORT) {
