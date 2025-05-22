@@ -217,8 +217,6 @@ class MinecraftRconService {
 		try {
 			const result = await this.executeCommand(serverId, 'list');
 
-			console.log("[RCON] -", result);
-
 			if (result.success && result.response) {
 				// Очищаємо кольорові коди з відповіді
 				const cleanResponse = result.response.replace(/§[0-9a-fk-or]/gi, '');
@@ -243,10 +241,12 @@ class MinecraftRconService {
 					for (const line of lines) {
 						// Шукаємо рядки з форматом "роль: нікнейм"
 						const playerMatch = line.match(/^([^:]+):\s*(.+)$/);
-						if (playerMatch && playerMatch[2]) {
+						if (playerMatch && playerMatch[1] && playerMatch[2]) {
+							const role = playerMatch[1].trim();
 							const playerName = playerMatch[2].trim();
-							if (playerName && playerName.length > 0) {
-								players.push(playerName);
+							if (playerName && playerName.length > 0 && role && role.length > 0) {
+								// Форматуємо як "[Роль] Нікнейм"
+								players.push(`[${role}] ${playerName}`);
 							}
 						}
 					}
