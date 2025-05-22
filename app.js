@@ -9,6 +9,7 @@ import { startPeriodicUpdates } from './services/messageCounter.service.js';
 import { pool } from './services/db.service.js';
 import { setupScheduleReportSchedule } from './services/sheduleRewards.service.js';
 import authRouter from './router/auth.router.js';
+import serverActionsRouter from './router/server-actions.router.js';
 import dns from 'node:dns';
 
 dns.setDefaultResultOrder('ipv4first');
@@ -40,6 +41,7 @@ app.use((req, res, next) => {
 // Маршрути
 app.use('/players', playersRouter);
 app.use('/auth', authRouter);
+app.use('/rcon-server', serverActionsRouter);
 
 // Базовий маршрут для перевірки роботи сервера
 app.get('/', (req, res) => {
