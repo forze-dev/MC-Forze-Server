@@ -4,7 +4,9 @@ const helpCommand = (ctx) => {
 	- /help — Усі команди бота
 	- /info — Інформація про сервер
 	- /register — Реєстрація у грі
-	- /reffer  — Додати реферала`);
+	- /reffer  — Додати свого рефера
+	- /statistic — Твоя статистика
+	- /online — Онлайн гравці на сервері`);
 };
 
 export default helpCommand

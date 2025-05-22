@@ -14,13 +14,6 @@ jobs:
     # Завантажуємо код з репозиторію
     - name: Checkout code
       uses: actions/checkout@v4
-
-    # Встановлюємо Node.js (додав для стабільності)
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18.19.1'
-        cache: 'npm'
     
     # Встановлюємо залежності
     - name: Install dependencies
