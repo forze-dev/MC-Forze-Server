@@ -220,20 +220,42 @@ class MinecraftRconService {
 			console.log("[RCON] -", result);
 
 			if (result.success && result.response) {
+				// Очищаємо кольорові коди з відповіді
+				const cleanResponse = result.response.replace(/§[0-9a-fk-or]/gi, '');
+
+				console.log("[RCON CLEAN] -", cleanResponse);
+
 				// Парсимо відповідь для отримання списку гравців
-				const playerMatch = result.response.match(/There are \d+ of a max of \d+ players online: (.+)/);
-				if (playerMatch && playerMatch[1]) {
-					const players = playerMatch[1].split(', ').map(name => name.trim());
-					return {
-						success: true,
-						players: players
-					};
+				// Шукаємо шаблон для вашого формату відповіді
+				let players = [];
+
+				// Спробуємо знайти гравців у різних форматах
+				// Формат 1: стандартний Minecraft "There are X of a max of Y players online: player1, player2"
+				const standardMatch = cleanResponse.match(/There are \d+ (?:of a max of|out of maximum) \d+ players online[:.]\s*(.+)/i);
+
+				if (standardMatch && standardMatch[1] && standardMatch[1].trim() !== '') {
+					players = standardMatch[1].split(',').map(name => name.trim()).filter(name => name.length > 0);
 				} else {
-					return {
-						success: true,
-						players: []
-					};
+					// Формат 2: ваш кастомний формат з новими рядками
+					// Розбиваємо на рядки і шукаємо гравців
+					const lines = cleanResponse.split('\n');
+
+					for (const line of lines) {
+						// Шукаємо рядки з форматом "роль: нікнейм"
+						const playerMatch = line.match(/^([^:]+):\s*(.+)$/);
+						if (playerMatch && playerMatch[2]) {
+							const playerName = playerMatch[2].trim();
+							if (playerName && playerName.length > 0) {
+								players.push(playerName);
+							}
+						}
+					}
 				}
+
+				return {
+					success: true,
+					players: players
+				};
 			}
 
 			return result;
