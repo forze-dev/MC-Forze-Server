@@ -1,4 +1,4 @@
-name: Deploy Bot
+name: Deploy Server
 
 # Коли запускати workflow
 on:
@@ -31,10 +31,10 @@ jobs:
       if: github.ref == 'refs/heads/main'  # тільки з main гілки
       uses: appleboy/ssh-action@v1.0.0
       with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.PRIVATE_KEY }}
-        port: ${{ secrets.PORT }}
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_KEY }}
+        port: ${{ secrets.VPS_PORT }}
         script: |
           cd /var/www/api-forze-space
           echo "📂 Pulling latest changes..."
