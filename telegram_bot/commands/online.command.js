@@ -12,8 +12,6 @@ const onlineCommand = async (ctx) => {
 			method: 'GET',
 			headers: {
 				'Content-Type': 'application/json',
-				// Тут можна додати авторизацію, якщо потрібно
-				// 'Authorization': `Bearer ${token}`
 			}
 		});
 
@@ -41,20 +39,20 @@ const onlineCommand = async (ctx) => {
 
 		// Якщо запит успішний
 		if (response.ok && data) {
-			let message = '🎮 **Онлайн на сервері:**\n\n';
+			let message = '🎮 <b>Онлайн на сервері:</b>\n\n';
 
 			if (data.count === 0 || !data.players || data.players.length === 0) {
 				message += '😴 На сервері зараз немає гравців :(';
 			} else {
-				message += `👥 **Всього гравців: ${data.count}**\n\n`;
+				message += `👥 <b>Всього гравців: ${data.count}</b>\n\n`;
 
 				// Додаємо список гравців
 				data.players.forEach((player) => {
-					message += `- \`${player}\`\n`;
+					message += `- <code>${player}</code>\n`;
 				});
 
 				// Додаємо інформацію про сервер
-				message += `\n😎 **Заходь до нас :)**\nхххххххх.ххххххххх`;
+				message += `\n😎 <b>Заходь до нас :)</b>\nхххххххх.ххххххххх`;
 			}
 
 			// Редагуємо повідомлення про завантаження з результатом
@@ -63,7 +61,7 @@ const onlineCommand = async (ctx) => {
 				loadingMessage.message_id,
 				null,
 				message,
-				{ parse_mode: 'Markdown' }
+				{ parse_mode: 'HTML' }
 			);
 
 			console.log(`✅ Команда /online успішно виконана для користувача ${ctx.from.id}`);
