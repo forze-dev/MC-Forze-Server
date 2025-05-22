@@ -10,6 +10,7 @@ import { pool } from './services/db.service.js';
 import { setupScheduleReportSchedule } from './services/sheduleRewards.service.js';
 import authRouter from './router/auth.router.js';
 import serverActionsRouter from './router/server-actions.router.js';
+import productsRouter from './router/products.router.js';
 import shopRouter from './router/shop.router.js';
 import dns from 'node:dns';
 
@@ -42,6 +43,7 @@ app.use((req, res, next) => {
 // Маршрути
 app.use('/players', playersRouter);
 app.use('/auth', authRouter);
+app.use('/products', productsRouter);
 app.use('/rcon-server', serverActionsRouter);
 app.use('/shop', shopRouter);
 app.use('/uploads', express.static('uploads'));
