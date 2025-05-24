@@ -70,7 +70,7 @@ const statisticCommand = async (ctx) => {
 			message += `⚠️ Розширена статистика недоступна. Можливо, ти ще не заходив(ла) на сервер.\n\n`;
 		}
 
-		message += `_Заходь на наш сервер: ххххххххххххххххх_`;
+		message += `_Заходь на наш сервер: mine.forze.space_`;
 
 		// Відправляємо повідомлення
 		ctx.replyWithMarkdown(message);

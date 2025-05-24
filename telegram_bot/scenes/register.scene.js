@@ -137,7 +137,7 @@ async function finishRegistration(ctx) {
 		console.log(`📨 Отримано відповідь від API: ${response.status} ${JSON.stringify(data)}`);
 
 		if (response.ok && data.message === 'User registered') {
-			let message = `✅ Реєстрація успішна!\n\n👤 Нік: ${minecraftNick}\n🔐 Пароль: ${password}\n\nСервер: ххххххххххххххххх\nВерсія: 1.16 - 1.21.4`
+			let message = `✅ Реєстрація успішна!\n\n👤 Нік: ${minecraftNick}\n🔐 Пароль: ${password}\n\nСервер: mine.forze.space\nВерсія: 1.16 - 1.21.4`
 
 			if (referrerNick && !data.referrer_applied) {
 				message += `\n\nГравця з ніком ${referrerNick}, якого ти вказав як того, хто тебе запросив, не знайдено. Ти завжди можеш додати його пізніше командою: /reffer <Нік>`
