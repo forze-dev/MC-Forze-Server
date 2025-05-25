@@ -12,6 +12,7 @@ import authRouter from './router/auth.router.js';
 import serverActionsRouter from './router/server-actions.router.js';
 import productsRouter from './router/products.router.js';
 import shopRouter from './router/shop.router.js';
+import promocodesRouter from './router/promocodes.router.js';
 import dns from 'node:dns';
 
 dns.setDefaultResultOrder('ipv4first');
@@ -45,6 +46,7 @@ app.use('/players', playersRouter);
 app.use('/auth', authRouter);
 app.use('/products', productsRouter);
 app.use('/rcon-server', serverActionsRouter);
+app.use('/promocodes', promocodesRouter);
 app.use('/shop', shopRouter);
 app.use('/uploads', express.static('uploads'));
 
