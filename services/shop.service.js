@@ -75,8 +75,8 @@ class ShopService {
 						throw new Error('Тип товару "subscription" поки не підтримується');
 
 					case 'rank':
-						// TODO: Буде реалізовано пізніше
-						throw new Error('Тип товару "rank" поки не підтримується');
+						result = await this._processRankPurchase(conn, product, purchaseData);
+						break;
 
 					case 'service':
 						// TODO: Буде реалізовано пізніше
@@ -108,6 +108,176 @@ class ShopService {
 			};
 		}
 	}
+
+	/**
+ * Приватний метод обробки покупки ранку
+ * @param {Object} conn - З'єднання з базою даних
+ * @param {Object} product - Інформація про товар
+ * @param {Object} purchaseData - Дані про покупку
+ * @returns {Promise<Object>} Результат обробки
+ */
+	async _processRankPurchase(conn, product, purchaseData) {
+		const { telegramId, minecraftNick, purchaseId } = purchaseData;
+
+		console.log(`🎖️ Обробка ранку для ${minecraftNick}`);
+
+		// Створюємо запис виконання
+		const now = Math.floor(Date.now() / 1000);
+		const [executionResult] = await conn.query(
+			`INSERT INTO product_executions 
+		 (purchase_id, telegram_id, product_id, execution_type, execution_status, created_at) 
+		 VALUES (?, ?, ?, 'rank_set', 'pending', ?)`,
+			[purchaseId, telegramId, product.id, now]
+		);
+
+		const executionId = executionResult.insertId;
+
+		// Перевіряємо чи потрібно автоматично виконувати
+		if (product.auto_execute && !product.requires_manual_approval) {
+			console.log(`🚀 Автоматичне встановлення ранку для ${minecraftNick}`);
+
+			const executionResult = await this._executeRankCommands(
+				product.execution_config,
+				minecraftNick,
+				conn,
+				executionId
+			);
+
+			return {
+				message: 'Твій ранг успішно встановлено!',
+				executionResults: executionResult.executionResults,
+				autoExecuted: true
+			};
+		} else {
+			// Потрібна ручна обробка
+			await conn.query(
+				'UPDATE product_executions SET execution_status = ? WHERE id = ?',
+				['manual_required', executionId]
+			);
+
+			return {
+				message: product.requires_manual_approval
+					? 'Запит на встановлення ранку відправлено. Адміністратор розгляне його найближчим часом.'
+					: 'Запит на встановлення ранку створено.',
+				requiresManualAction: true,
+				autoExecuted: false
+			};
+		}
+	}
+
+	/**
+	 * Приватний метод виконання команд встановлення ранку
+	 * @param {Object} executionConfig - Конфігурація виконання
+	 * @param {string} minecraftNick - Minecraft нікнейм
+	 * @param {Object} conn - З'єднання з базою даних
+	 * @param {number} executionId - ID запису виконання
+	 * @returns {Promise<Object>} Результат виконання
+	 */
+	async _executeRankCommands(executionConfig, minecraftNick, conn, executionId) {
+		try {
+			const serverId = executionConfig.server_id || 'MFS';
+			const executionResults = [];
+
+			// Отримуємо команди з конфігурації
+			let commands = [];
+
+			if (executionConfig.commands && Array.isArray(executionConfig.commands)) {
+				commands = executionConfig.commands;
+			} else if (executionConfig.rcon_commands && Array.isArray(executionConfig.rcon_commands)) {
+				commands = executionConfig.rcon_commands;
+			} else {
+				throw new Error('Не знайдено команд для виконання в конфігурації ранку');
+			}
+
+			console.log(`🎯 Виконання ${commands.length} команд для встановлення ранку`);
+
+			// Виконуємо кожну команду послідовно
+			for (let i = 0; i < commands.length; i++) {
+				const rawCommand = commands[i];
+				const command = this._replacePlaceholders(rawCommand, {
+					minecraft_nick: minecraftNick
+				});
+
+				console.log(`🔧 Команда ${i + 1}/${commands.length}: ${command}`);
+
+				try {
+					const result = await rconService.executeCommand(serverId, command);
+
+					executionResults.push({
+						command: command,
+						success: result.success,
+						response: result.response || result.error,
+						order: i + 1
+					});
+
+					if (!result.success) {
+						console.error(`❌ Команда ${i + 1} провалилась: ${result.error}`);
+						// Продовжуємо виконання інших команд, але записуємо помилку
+					} else {
+						console.log(`✅ Команда ${i + 1} виконана успішно`);
+					}
+
+					// Невелика затримка між командами
+					if (i < commands.length - 1) {
+						await new Promise(resolve => setTimeout(resolve, 500));
+					}
+
+				} catch (cmdError) {
+					console.error(`❌ Помилка виконання команди ${i + 1}:`, cmdError);
+
+					executionResults.push({
+						command: command,
+						success: false,
+						response: cmdError.message,
+						order: i + 1
+					});
+				}
+			}
+
+			const now = Math.floor(Date.now() / 1000);
+			const allSuccess = executionResults.every(result => result.success);
+			const successCount = executionResults.filter(result => result.success).length;
+
+			if (allSuccess) {
+				// Всі команди виконані успішно
+				await conn.query(
+					'UPDATE product_executions SET execution_status = ?, execution_result = ?, command_executed = ?, executed_at = ? WHERE id = ?',
+					['success', JSON.stringify(executionResults), `${successCount}/${commands.length} команд`, now, executionId]
+				);
+
+				console.log(`✅ Ранг для ${minecraftNick} успішно встановлено (${successCount}/${commands.length} команд)`);
+
+				return {
+					success: true,
+					message: `Твій ранг успішно встановлено! Виконано ${successCount} команд.`,
+					executionResults: executionResults
+				};
+			} else {
+				// Деякі команди провалились
+				const failedCount = commands.length - successCount;
+
+				await conn.query(
+					'UPDATE product_executions SET execution_status = ?, execution_result = ?, command_executed = ?, retry_count = retry_count + 1 WHERE id = ?',
+					['failed', JSON.stringify(executionResults), `${successCount}/${commands.length} команд`, executionId]
+				);
+
+				throw new Error(`Встановлення ранку частково провалилось: ${failedCount} з ${commands.length} команд не виконались`);
+			}
+
+		} catch (error) {
+			console.error('❌ Помилка виконання команд ранку:', error);
+
+			// Оновлюємо статус помилки
+			const now = Math.floor(Date.now() / 1000);
+			await conn.query(
+				'UPDATE product_executions SET execution_status = ?, execution_result = ?, retry_count = retry_count + 1 WHERE id = ?',
+				['failed', error.message, executionId]
+			);
+
+			throw error;
+		}
+	}
+
 
 	/**
 	 * Приватний метод обробки покупки вайтліста
@@ -315,6 +485,10 @@ class ShopService {
 					await this._retryWhitelistExecution(conn, execution);
 					break;
 
+				case 'rank_set':
+					await this._retryRankExecution(conn, execution);
+					break;
+
 				// Тут будуть інші типи в майбутньому
 				default:
 					console.log(`⚠️ Невідомий тип виконання: ${execution.execution_type}`);
@@ -322,6 +496,98 @@ class ShopService {
 
 		} catch (error) {
 			console.error(`❌ Помилка повторної спроби для ${execution.minecraft_nick}:`, error);
+		}
+	}
+
+	/**
+ * Приватний метод повторної спроби виконання команд ранку
+ * @param {Object} conn - З'єднання з базою даних
+ * @param {Object} execution - Запис виконання
+ */
+	async _retryRankExecution(conn, execution) {
+		try {
+			let executionConfig = {};
+			try {
+				executionConfig = typeof execution.execution_config === 'string'
+					? JSON.parse(execution.execution_config)
+					: execution.execution_config || {};
+			} catch (e) {
+				throw new Error('Некоректна конфігурація команд ранку');
+			}
+
+			const serverId = executionConfig.server_id || 'MFS';
+			const executionResults = [];
+
+			// Отримуємо команди
+			let commands = [];
+			if (executionConfig.commands && Array.isArray(executionConfig.commands)) {
+				commands = executionConfig.commands;
+			} else if (executionConfig.rcon_commands && Array.isArray(executionConfig.rcon_commands)) {
+				commands = executionConfig.rcon_commands;
+			} else {
+				throw new Error('Не знайдено команд для повторного виконання');
+			}
+
+			console.log(`🔄 Повторне виконання ${commands.length} команд ранку для ${execution.minecraft_nick}`);
+
+			// Виконуємо команди
+			for (let i = 0; i < commands.length; i++) {
+				const rawCommand = commands[i];
+				const command = this._replacePlaceholders(rawCommand, {
+					minecraft_nick: execution.minecraft_nick
+				});
+
+				try {
+					const result = await rconService.executeCommand(serverId, command);
+
+					executionResults.push({
+						command: command,
+						success: result.success,
+						response: result.response || result.error,
+						order: i + 1
+					});
+
+					if (i < commands.length - 1) {
+						await new Promise(resolve => setTimeout(resolve, 500));
+					}
+
+				} catch (cmdError) {
+					executionResults.push({
+						command: command,
+						success: false,
+						response: cmdError.message,
+						order: i + 1
+					});
+				}
+			}
+
+			const now = Math.floor(Date.now() / 1000);
+			const allSuccess = executionResults.every(result => result.success);
+			const successCount = executionResults.filter(result => result.success).length;
+
+			if (allSuccess) {
+				// Успішне виконання
+				await conn.query(
+					'UPDATE product_executions SET execution_status = ?, execution_result = ?, command_executed = ?, executed_at = ? WHERE id = ?',
+					['success', JSON.stringify(executionResults), `${successCount}/${commands.length} команд`, now, execution.id]
+				);
+
+				console.log(`✅ Повторна спроба успішна: ранг для ${execution.minecraft_nick} встановлено`);
+			} else {
+				throw new Error(`Повторна спроба частково провалилась: ${commands.length - successCount} команд не виконались`);
+			}
+
+		} catch (error) {
+			// Збільшуємо лічильник спроб
+			const newRetryCount = execution.retry_count + 1;
+			const status = newRetryCount >= execution.max_retries ? 'failed' : 'pending';
+
+			await conn.query(
+				'UPDATE product_executions SET retry_count = ?, execution_status = ?, execution_result = ? WHERE id = ?',
+				[newRetryCount, status, error.message, execution.id]
+			);
+
+			console.log(`❌ Спроба ${newRetryCount}/${execution.max_retries} для ранку ${execution.minecraft_nick}: ${error.message}`);
 		}
 	}
 
