@@ -67,8 +67,8 @@ class ShopService {
 						break;
 
 					case 'item':
-						// TODO: Буде реалізовано пізніше
-						throw new Error('Тип товару "item" поки не підтримується');
+						result = await this._processItemPurchase(conn, product, purchaseData);
+						break;
 
 					case 'subscription':
 						// TODO: Буде реалізовано пізніше
@@ -106,6 +106,319 @@ class ShopService {
 				success: false,
 				error: error.message
 			};
+		}
+	}
+
+	// Додайте ці методи в клас ShopService
+
+	/**
+	 * Приватний метод обробки покупки предметів
+	 * @param {Object} conn - З'єднання з базою даних
+	 * @param {Object} product - Інформація про товар
+	 * @param {Object} purchaseData - Дані про покупку
+	 * @returns {Promise<Object>} Результат обробки
+	 */
+	async _processItemPurchase(conn, product, purchaseData) {
+		const { telegramId, minecraftNick, purchaseId, quantity = 1 } = purchaseData;
+
+		console.log(`📦 Обробка предметів для ${minecraftNick} (кількість: ${quantity})`);
+
+		// Створюємо запис виконання
+		const now = Math.floor(Date.now() / 1000);
+		const [executionResult] = await conn.query(
+			`INSERT INTO product_executions 
+		 (purchase_id, telegram_id, product_id, execution_type, execution_status, created_at) 
+		 VALUES (?, ?, ?, 'item_give', 'pending', ?)`,
+			[purchaseId, telegramId, product.id, now]
+		);
+
+		const executionId = executionResult.insertId;
+
+		// Перевіряємо чи потрібно автоматично виконувати
+		if (product.auto_execute && !product.requires_manual_approval) {
+			console.log(`🚀 Автоматична видача предметів для ${minecraftNick}`);
+
+			const executionResult = await this._executeItemCommands(
+				product,
+				minecraftNick,
+				quantity,
+				conn,
+				executionId
+			);
+
+			return {
+				message: executionResult.message,
+				executionResults: executionResult.executionResults,
+				autoExecuted: true,
+				hasStorageItems: executionResult.hasStorageItems
+			};
+		} else {
+			// Потрібна ручна обробка
+			await conn.query(
+				'UPDATE product_executions SET execution_status = ? WHERE id = ?',
+				['manual_required', executionId]
+			);
+
+			return {
+				message: product.requires_manual_approval
+					? 'Запит на видачу предметів відправлено. Адміністратор розгляне його найближчим часом.'
+					: 'Запит на видачу предметів створено.',
+				requiresManualAction: true,
+				autoExecuted: false,
+				hasStorageItems: true
+			};
+		}
+	}
+
+	/**
+	 * Приватний метод виконання команд видачі предметів
+	 * @param {Object} product - Інформація про товар
+	 * @param {string} minecraftNick - Minecraft нікнейм
+	 * @param {number} quantity - Кількість наборів
+	 * @param {Object} conn - З'єднання з базою даних
+	 * @param {number} executionId - ID запису виконання
+	 * @returns {Promise<Object>} Результат виконання
+	 */
+	async _executeItemCommands(product, minecraftNick, quantity, conn, executionId) {
+		try {
+			const executionConfig = product.execution_config || {};
+			const serverId = executionConfig.server_id || 'MFS';
+			const deliveryMethod = executionConfig.delivery_method || 'storage';
+
+			let commands = [];
+			let executionResults = [];
+			let hasStorageItems = false;
+
+			// Якщо є готові RCON команди в конфігурації
+			if (executionConfig.rcon_commands && Array.isArray(executionConfig.rcon_commands)) {
+				commands = executionConfig.rcon_commands.map(cmd =>
+					this._replacePlaceholders(cmd, { minecraft_nick: minecraftNick })
+				);
+				hasStorageItems = deliveryMethod === 'storage';
+			}
+			// Інакше генеруємо команди з items_data
+			else if (product.items_data) {
+				const result = this._generateItemCommands(product, minecraftNick, quantity);
+				commands = result.commands;
+				hasStorageItems = result.hasStorageItems;
+			}
+			else {
+				throw new Error('Не знайдено команд або предметів для видачі');
+			}
+
+			console.log(`🎯 Виконання ${commands.length} команд для видачі предметів`);
+
+			// Виконуємо кожну команду послідовно
+			for (let i = 0; i < commands.length; i++) {
+				const command = commands[i];
+
+				console.log(`🔧 Команда ${i + 1}/${commands.length}: ${command}`);
+
+				try {
+					const result = await rconService.executeCommand(serverId, command);
+
+					executionResults.push({
+						command: command,
+						success: result.success,
+						response: result.response || result.error,
+						order: i + 1
+					});
+
+					if (!result.success) {
+						console.error(`❌ Команда ${i + 1} провалилась: ${result.error}`);
+					} else {
+						console.log(`✅ Команда ${i + 1} виконана успішно`);
+					}
+
+					// Невелика затримка між командами
+					if (i < commands.length - 1) {
+						await new Promise(resolve => setTimeout(resolve, 300));
+					}
+
+				} catch (cmdError) {
+					console.error(`❌ Помилка виконання команди ${i + 1}:`, cmdError);
+
+					executionResults.push({
+						command: command,
+						success: false,
+						response: cmdError.message,
+						order: i + 1
+					});
+				}
+			}
+
+			const now = Math.floor(Date.now() / 1000);
+			const allSuccess = executionResults.every(result => result.success);
+			const successCount = executionResults.filter(result => result.success).length;
+
+			if (allSuccess) {
+				// Всі команди виконані успішно
+				await conn.query(
+					'UPDATE product_executions SET execution_status = ?, execution_result = ?, command_executed = ?, executed_at = ? WHERE id = ?',
+					['success', JSON.stringify(executionResults), `${successCount}/${commands.length} команд`, now, executionId]
+				);
+
+				console.log(`✅ Предмети для ${minecraftNick} успішно видано (${successCount}/${commands.length} команд)`);
+
+				const message = hasStorageItems
+					? 'Предмети успішно додано у ваше персональне сховище!'
+					: 'Предмети успішно видано!';
+
+				return {
+					success: true,
+					message: `${message} Виконано ${successCount} команд.`,
+					executionResults: executionResults,
+					hasStorageItems: hasStorageItems
+				};
+			} else {
+				// Деякі команди провалились
+				const failedCount = commands.length - successCount;
+
+				await conn.query(
+					'UPDATE product_executions SET execution_status = ?, execution_result = ?, command_executed = ?, retry_count = retry_count + 1 WHERE id = ?',
+					['failed', JSON.stringify(executionResults), `${successCount}/${commands.length} команд`, executionId]
+				);
+
+				throw new Error(`Видача предметів частково провалилась: ${failedCount} з ${commands.length} команд не виконались`);
+			}
+
+		} catch (error) {
+			console.error('❌ Помилка виконання команд видачі предметів:', error);
+
+			// Оновлюємо статус помилки
+			const now = Math.floor(Date.now() / 1000);
+			await conn.query(
+				'UPDATE product_executions SET execution_status = ?, execution_result = ?, retry_count = retry_count + 1 WHERE id = ?',
+				['failed', error.message, executionId]
+			);
+
+			throw error;
+		}
+	}
+
+	/**
+	 * Приватний метод генерації команд з items_data
+	 * @param {Object} product - Інформація про товар
+	 * @param {string} minecraftNick - Minecraft нікнейм
+	 * @param {number} quantity - Кількість наборів
+	 * @returns {Object} Команди та метод доставки
+	 */
+	_generateItemCommands(product, minecraftNick, quantity) {
+		try {
+			let itemsData = [];
+
+			// Парсимо items_data
+			if (typeof product.items_data === 'string') {
+				itemsData = JSON.parse(product.items_data);
+			} else if (Array.isArray(product.items_data)) {
+				itemsData = product.items_data;
+			} else {
+				throw new Error('Некоректний формат items_data');
+			}
+
+			const executionConfig = product.execution_config || {};
+			const deliveryMethod = executionConfig.delivery_method || 'storage';
+			const commands = [];
+
+			// Генеруємо команди для кожного предмета
+			itemsData.forEach(item => {
+				const itemId = item.minecraft_id;
+				const amount = (item.amount || 1) * quantity;
+
+				let command;
+
+				if (deliveryMethod === 'storage') {
+					// Використовуємо ваш плагін сховища
+					if (item.nbt) {
+						command = `storage add ${minecraftNick} ${itemId}${item.nbt} ${amount}`;
+					} else {
+						command = `storage add ${minecraftNick} ${itemId} ${amount}`;
+					}
+				} else {
+					// Звичайна команда give
+					if (item.nbt) {
+						command = `give ${minecraftNick} ${itemId}${item.nbt} ${amount}`;
+					} else {
+						command = `give ${minecraftNick} ${itemId} ${amount}`;
+					}
+				}
+
+				commands.push(command);
+			});
+
+			// Додаємо повідомлення гравцю
+			if (deliveryMethod === 'storage') {
+				commands.push(`tell ${minecraftNick} Предмети додано у ваше персональне сховище! Відкрийте його командою /storage open`);
+			} else {
+				commands.push(`tell ${minecraftNick} Ви отримали предмети: ${product.name}!`);
+			}
+
+			return {
+				commands: commands,
+				hasStorageItems: deliveryMethod === 'storage'
+			};
+
+		} catch (error) {
+			console.error('❌ Помилка генерації команд предметів:', error);
+			throw new Error('Не вдалося згенерувати команди для видачі предметів');
+		}
+	}
+
+	/**
+	 * Приватний метод повторної спроби виконання команд предметів
+	 * @param {Object} conn - З'єднання з базою даних
+	 * @param {Object} execution - Запис виконання
+	 */
+	async _retryItemExecution(conn, execution) {
+		try {
+			// Отримуємо продукт для повторного виконання
+			const [products] = await conn.query(
+				'SELECT * FROM products WHERE id = ?',
+				[execution.product_id]
+			);
+
+			if (products.length === 0) {
+				throw new Error('Товар не знайдено');
+			}
+
+			const product = products[0];
+
+			// Парсимо execution_config
+			if (product.execution_config && typeof product.execution_config === 'string') {
+				try {
+					product.execution_config = JSON.parse(product.execution_config);
+				} catch (e) {
+					console.error('❌ Помилка парсингу execution_config:', e);
+					product.execution_config = {};
+				}
+			} else if (!product.execution_config) {
+				product.execution_config = {};
+			}
+
+			console.log(`🔄 Повторна видача предметів для ${execution.minecraft_nick}`);
+
+			// Виконуємо команди предметів
+			const result = await this._executeItemCommands(
+				product,
+				execution.minecraft_nick,
+				1, // quantity = 1 для повторної спроби
+				conn,
+				execution.id
+			);
+
+			console.log(`✅ Повторна спроба успішна: предмети для ${execution.minecraft_nick} видано`);
+
+		} catch (error) {
+			// Збільшуємо лічильник спроб
+			const newRetryCount = execution.retry_count + 1;
+			const status = newRetryCount >= execution.max_retries ? 'failed' : 'pending';
+
+			await conn.query(
+				'UPDATE product_executions SET retry_count = ?, execution_status = ?, execution_result = ? WHERE id = ?',
+				[newRetryCount, status, error.message, execution.id]
+			);
+
+			console.log(`❌ Спроба ${newRetryCount}/${execution.max_retries} для предметів ${execution.minecraft_nick}: ${error.message}`);
 		}
 	}
 
@@ -487,6 +800,10 @@ class ShopService {
 
 				case 'rank_set':
 					await this._retryRankExecution(conn, execution);
+					break;
+
+				case 'item_give':
+					await this._retryItemExecution(conn, execution);
 					break;
 
 				// Тут будуть інші типи в майбутньому
