@@ -7,6 +7,7 @@ import registerCommand from './commands/register.command.js';
 import refferCommand from './commands/reffer.command.js';
 import statisticCommand from './commands/statistic.command.js';
 import onlineCommand from './commands/online.command.js';
+import infoCommand from './commands/info.command.js';
 
 import { registerScene } from './scenes/register.scene.js';
 import { handleMessage } from './handlers/messageCounter.handler.js';
@@ -49,6 +50,7 @@ tgBot.command('register', registerCommand);
 tgBot.command('reffer', refferCommand);
 tgBot.command('statistic', statisticCommand);
 tgBot.command('online', onlineCommand);
+tgBot.command('info', infoCommand);
 
 const startBot = async () => {
 	try {
