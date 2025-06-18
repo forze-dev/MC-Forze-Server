@@ -4,7 +4,7 @@ const rewardsCommand = async (ctx) => {
 		const loadingMessage = await ctx.reply('⏳ Завантажую статистику нарахувань...');
 
 		// Отримуємо загальну статистику системи
-		const statsResponse = await fetch(`${process.env.API_URL}/playtime-rewards/stats`);
+		const statsResponse = await fetch(`${process.env.API_URL}/rewards/stats`);
 
 		if (!statsResponse.ok) {
 			throw new Error(`Статистика недоступна: ${statsResponse.status}`);
@@ -13,7 +13,7 @@ const rewardsCommand = async (ctx) => {
 		const statsData = await statsResponse.json();
 
 		// Отримуємо топ гравців за 24 години
-		const top24hResponse = await fetch(`${process.env.API_URL}/playtime-rewards/top/24h`);
+		const top24hResponse = await fetch(`${process.env.API_URL}/rewards/top/24h`);
 		let top24hData = null;
 
 		if (top24hResponse.ok) {
@@ -21,7 +21,7 @@ const rewardsCommand = async (ctx) => {
 		}
 
 		// Отримуємо топ гравців за весь час
-		const topAllTimeResponse = await fetch(`${process.env.API_URL}/playtime-rewards/top/all-time?limit=5`);
+		const topAllTimeResponse = await fetch(`${process.env.API_URL}/rewards/top/all-time?limit=5`);
 		let topAllTimeData = null;
 
 		if (topAllTimeResponse.ok) {
@@ -107,7 +107,7 @@ const rewardsCommand = async (ctx) => {
  */
 const rewards24Command = async (ctx) => {
 	try {
-		const response = await fetch(`${process.env.API_URL}/playtime-rewards/top/24h`);
+		const response = await fetch(`${process.env.API_URL}/rewards/top/24h`);
 
 		if (!response.ok) {
 			throw new Error(`API помилка: ${response.status}`);
@@ -149,7 +149,7 @@ const myRewardsCommand = async (ctx) => {
 	try {
 		const telegramId = ctx.from.id;
 
-		const response = await fetch(`${process.env.API_URL}/playtime-rewards/player/${telegramId}`);
+		const response = await fetch(`${process.env.API_URL}/rewards/player/${telegramId}`);
 
 		if (response.status === 404) {
 			return ctx.reply(

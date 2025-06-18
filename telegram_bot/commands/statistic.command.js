@@ -21,7 +21,7 @@ const statisticCommand = async (ctx) => {
 		// Отримуємо статистику нарахувань за активний час
 		let playtimeRewards = null;
 		try {
-			const playtimeResponse = await fetch(`${process.env.API_URL}/playtime-rewards/player/${telegramId}`);
+			const playtimeResponse = await fetch(`${process.env.API_URL}/rewards/player/${telegramId}`);
 			if (playtimeResponse.ok) {
 				const playtimeData = await playtimeResponse.json();
 				playtimeRewards = playtimeData.has_rewards ? playtimeData.player_data : null;
