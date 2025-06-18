@@ -127,4 +127,4 @@ function formatDate(timestamp) {
 	});
 }
 
-export { statisticCommand };
+export default statisticCommand;
