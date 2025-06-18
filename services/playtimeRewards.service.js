@@ -280,7 +280,7 @@ function formatPlaytimeReport(awardResults, topPlayers) {
 	}
 
 	message += `\n💡 *1 хвилина активної гри = 1 GFC*`;
-	message += `\n⏰ Наступне нарахування завтра о 15:00`;
+	message += `\n⏰ Наступне нарахування завтра`;
 
 	return message;
 }
