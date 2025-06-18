@@ -132,7 +132,7 @@ const rewards24Command = async (ctx) => {
 			message += `Будь першим - зайди на сервер і грай активно!\n`;
 		}
 
-		message += `\n⏰ Оновлення щодня о 15:00 за київським часом`;
+		message += `\n⏰ Оновлення щодня після обіду`;
 
 		await ctx.reply(message, { parse_mode: 'Markdown' });
 

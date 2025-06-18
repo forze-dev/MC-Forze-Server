@@ -82,7 +82,7 @@ export const getPlayerPlaytimeRewards = async (req, res) => {
 
 					// Дата останнього нарахування
 					last_reward_date: new Date(playerRewards.last_awarded_at * 1000).toLocaleDateString('uk-UA'),
-					next_reward_date: 'Завтра о 15:00'
+					next_reward_date: 'кожен день після обіду'
 				}
 			});
 
@@ -233,7 +233,7 @@ export const getPlaytimeRewardsStats = async (req, res) => {
 					total_active_hours: Math.round(player.total_active_minutes / 60 * 10) / 10,
 					total_coins_awarded: player.coins_awarded
 				})),
-				next_reward_time: 'Завтра о 15:00 за київським часом'
+				next_reward_time: 'кожен день після обіду'
 			});
 
 		} finally {
