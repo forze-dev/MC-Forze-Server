@@ -15,6 +15,12 @@ import shopRouter from './router/shop.router.js';
 import promocodesRouter from './router/promocodes.router.js';
 import transferRouter from './router/transfer.router.js';
 import dns from 'node:dns';
+import playtimeRewardsRoutes from "./router/playtimeRewards.router.js"
+import {
+	setupPlaytimeRewardsSchedule,
+	checkPlaytimeScheduleSetup
+} from './services/playtimeRewards.service.js';
+
 
 dns.setDefaultResultOrder('ipv4first');
 
@@ -50,7 +56,9 @@ app.use('/rcon-server', serverActionsRouter);
 app.use('/promocodes', promocodesRouter);
 app.use('/transfer', transferRouter);
 app.use('/shop', shopRouter);
+app.use('/rewards', playtimeRewardsRoutes);
 app.use('/uploads', express.static('uploads'));
+
 
 // Базовий маршрут для перевірки роботи сервера
 app.get('/', (req, res) => {
@@ -93,6 +101,8 @@ const initialize = async () => {
 		});
 
 		setupScheduleReportSchedule();
+		setupPlaytimeRewardsSchedule();
+		checkPlaytimeScheduleSetup();
 
 		// Запускаємо Telegram бота
 		startBot();
