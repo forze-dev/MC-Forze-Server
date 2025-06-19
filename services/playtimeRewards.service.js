@@ -269,12 +269,17 @@ function formatPlaytimeReport(awardResults, topPlayers) {
 	message += `• Загалом нараховано: ${totalCoinsAwarded} GFC\n`;
 	message += `• Загальний активний час: ${Math.round(totalActiveHours * 10) / 10} годин\n\n`;
 
-	// Топ активних гравців за 24 години
-	if (topPlayers.length > 0) {
-		message += `🏆 *Топ активних гравців за останні 24 години:*\n`;
-		topPlayers.slice(0, 5).forEach((player, index) => {
+	if (awardResults.length > 0) {
+		// Сортуємо гравців за кількістю нарахованих коїнів
+		const topAwardedPlayers = [...awardResults]
+			.sort((a, b) => b.coins_awarded - a.coins_awarded)
+			.slice(0, 5);
+
+		message += `🏆 *Топ гравців за нарахованими коїнами сьогодні:*\n`;
+		topAwardedPlayers.forEach((player, index) => {
 			const emoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🏅';
-			message += `${emoji} ${index + 1}. \`${player.minecraft_nick}\` - ${player.active_hours_24h}г - ${player.coins_earned_24h} GFC\n`;
+			const newHours = Math.round(player.new_active_minutes / 60 * 10) / 10;
+			message += `${emoji} ${index + 1}. \`${player.minecraft_nick}\` - ${newHours}г (нових) - ${player.coins_awarded} GFC\n`;
 		});
 		message += `\n`;
 	}
